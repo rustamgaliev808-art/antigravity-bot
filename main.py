@@ -80,6 +80,28 @@ def get_days_keyboard():
         [InlineKeyboardButton("📅 Пятница", callback_data="day_fri")]
     ])
 
+def get_order_summary(items_list):
+    """Группирует одинаковые товары и возвращает красивый текст заказа"""
+    counts = {}
+    for item in items_list:
+        name = item['name']
+        if name not in counts:
+            counts[name] = {'count': 0, 'unit_price': item['price']}
+        counts[name]['count'] += 1
+    
+    formatted_lines = []
+    short_lines = []
+    for name, data in counts.items():
+        cnt = data['count']
+        total_price = f"{data['unit_price'] * cnt:,}".replace(",", " ")
+        count_str = f" x{cnt}" if cnt > 1 else ""
+        formatted_lines.append(f"• {name}{count_str} — {total_price} сум")
+        short_lines.append(f"{name}{count_str}")
+        
+    items_text = "\n".join(formatted_lines)
+    items_str = ", ".join(short_lines)
+    return items_text, items_str
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in users_db:
@@ -176,7 +198,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
-    # Добавление позиции в корзину (без выбора этажа)
+    # Добавление позиции в корзину
     elif data.startswith("add_"):
         item_id = data.split("add_")[1]
         item = get_item_by_id(item_id)
@@ -186,7 +208,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         order['items'].append(item)
         order['total'] += item['price']
 
-        items_text = "\n".join([f"• {i['name']} — {i['price']:,} сум".replace(",", " ") for i in order['items']])
+        items_text, _ = get_order_summary(order['items'])
         text = (
             f"<b>Проверьте Ваш заказ:</b>\n\n{items_text}\n\n"
             f"<b>Итого:</b> {order['total']:,} сум\n".replace(",", " ") +
@@ -223,12 +245,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         users_db[user_id]['orders_count'] += 1
         count = users_db[user_id]['orders_count']
         today = datetime.now().strftime("%d.%m")
-        items_str = " + ".join([i['name'].split(" + ")[0] for i in order['items']])
+        
+        items_text, items_str = get_order_summary(order['items'])
         
         users_db[user_id]['history'].append(f"{today} — {items_str} ({order['total']:,} сум) ✅".replace(",", " "))
         order_num = 2300 + count
         
-        text = f"✅ <b>Оплачено! Заказ №{order_num} принят.</b>\n\n{items_str}\nВыдача: 4 этаж, 12:30–14:00\n\nУвидимся на обеде 🙂"
+        text = (
+            f"✅ <b>Оплачено! Заказ №{order_num} принят.</b>\n\n"
+            f"<b>Состав заказа:</b>\n{items_text}\n\n"
+            f"Выдача: 4 этаж, 12:30–14:00\n\nУвидимся на обеде 🙂"
+        )
         if count % 5 == 0:
             text += f"\n\n🎁 Это ваш {count}-й заказ — сок в подарок к следующему обеду!"
             
@@ -238,8 +265,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             admin_text = (
                 f"🚨 <b>Новый заказ №{order_num}</b>\n"
                 f"📞 Тел: {users_db[user_id]['phone']}\n"
-                f"💰 Сумма: {order['total']:,} сум\n".replace(",", " ") +
-                f"🍽 Блюда: {items_str}"
+                f"💰 Сумма: {order['total']:,} сум\n\n".replace(",", " ") +
+                f"🍽 <b>Состав заказа:</b>\n{items_text}"
             )
             try:
                 await context.bot.send_message(chat_id=ADMIN_ID, text=admin_text, parse_mode='HTML')
