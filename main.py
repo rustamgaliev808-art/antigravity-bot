@@ -19,26 +19,27 @@ from telegram.ext import (
     ContextTypes
 )
 
-# Настройка логирования
+# Логирование
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
-# Переменные окружения или прямое указание значений
+# Конфигурация
 TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 ADMIN_ID = os.getenv("ADMIN_ID", "YOUR_TELEGRAM_ID_HERE")
+CHANNEL_ID = os.getenv("CHANNEL_ID", "@your_channel_username") # Юзернейм канала (напр. @my_channel) или ID (-100...)
 
-# Настройки Click Pass (Shishka)
 CLICK_PASS_ID = "052528"
 QR_FILE_NAME = "qr.jpg"
+POST_FILE_NAME = "post.jpg"
 
-# Хранилище данных в памяти
+# База данных в памяти
 users_db = {} 
 active_orders = {}
 menu_active = True
 
-# Меню по дням недели
+# Меню на неделю
 WEEKLY_MENU = {
     "mon": {
         "name": "Понедельник",
@@ -166,7 +167,8 @@ async def post_init(application: Application):
     commands = [
         BotCommand("start", "🔄 Перезапустить бота"),
         BotCommand("menu", "🍽 Посмотреть меню"),
-        BotCommand("history", "📜 История заказов")
+        BotCommand("history", "📜 История заказов"),
+        BotCommand("post", "📢 Опубликовать меню в канал (Админ)")
     ]
     await application.bot.set_my_commands(commands)
 
@@ -371,6 +373,48 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
         active_orders.pop(user_id, None)
 
+async def post_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Публикация анонса меню в канал (только для админа)"""
+    user_id = update.effective_user.id
+    if str(user_id) != str(ADMIN_ID):
+        await update.message.reply_text("У вас нет прав для выполнения этой команды.")
+        return
+
+    bot_info = await context.bot.get_me()
+    bot_username = bot_info.username
+
+    caption = (
+        "<b>🍽 Анонс обедов на сегодня!</b>\n\n"
+        "Свежее меню уже доступно в нашем боте.\n"
+        "Успейте оформить и оплатить заказ до 11:00!\n\n"
+        f"👉 <b>Заказать обед:</b> @{bot_username}"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🥗 Сделать заказ", url=f"https://t.me/{bot_username}")]
+    ])
+
+    try:
+        if os.path.exists(POST_FILE_NAME):
+            with open(POST_FILE_NAME, "rb") as photo:
+                await context.bot.send_photo(
+                    chat_id=CHANNEL_ID,
+                    photo=photo,
+                    caption=caption,
+                    reply_markup=keyboard,
+                    parse_mode='HTML'
+                )
+        else:
+            await context.bot.send_message(
+                chat_id=CHANNEL_ID,
+                text=caption,
+                reply_markup=keyboard,
+                parse_mode='HTML'
+            )
+        await update.message.reply_text("✅ Пост с картинкой успешно опубликован в канале!")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка публикации: {e}\n\nПроверьте, добавлен ли бот в администраторы канала.")
+
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in users_db or not users_db[user_id].get('history'):
@@ -394,15 +438,19 @@ async def toggle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     if TOKEN == "YOUR_BOT_TOKEN_HERE" or not TOKEN:
-        logging.error("Укажите BOT_TOKEN в коде или в переменных окружения!")
+        logging.error("Укажите BOT_TOKEN!")
         return
         
     app = Application.builder().token(TOKEN).post_init(post_init).build()
 
+    # Хэндлеры команд
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("menu", menu_command))
     app.add_handler(CommandHandler("history", history))
     app.add_handler(CommandHandler("toggle", toggle_menu))
+    app.add_handler(CommandHandler("post", post_to_channel))
+
+    # Хэндлеры сообщений и нажатий
     app.add_handler(MessageHandler(filters.CONTACT, handle_contact))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(CallbackQueryHandler(button_handler))
