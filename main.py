@@ -2,19 +2,38 @@ import os
 import logging
 import asyncio
 from datetime import datetime
-from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+from telegram import (
+    Update,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    BotCommand
+)
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    filters,
+    ContextTypes
+)
 
 # Настройка логирования
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
-TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID")) if os.getenv("ADMIN_ID") and os.getenv("ADMIN_ID").isdigit() else os.getenv("ADMIN_ID")
+# Переменные окружения или прямое указание значений
+TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+ADMIN_ID = os.getenv("ADMIN_ID", "YOUR_TELEGRAM_ID_HERE")
 
-# Ваш ID мерчанта в Click Pass
+# Настройки Click Pass (Shishka)
 CLICK_PASS_ID = "052528"
+QR_FILE_NAME = "qr.jpg"
 
-# Хранение данных в памяти
+# Хранилище данных в памяти
 users_db = {} 
 active_orders = {}
 menu_active = True
@@ -281,15 +300,37 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         
         amount_str = f"{amount:,}".replace(",", " ")
-        text = (
+        caption = (
             f"💳 <b>Счёт на {amount_str} сум сформирован!</b>\n\n"
-            "<b>Выберите удобный способ оплаты:</b>\n\n"
-            "1️⃣ Нажмите кнопку <b>«Оплатить в Click»</b> ниже для перехода в приложение.\n\n"
-            "2️⃣ Или скопируйте USSD-код (нажмите на него):\n"
+            "<b>Способы оплаты:</b>\n\n"
+            "1️⃣ Отсканируйте <b>QR-код</b> выше через приложение Click.\n\n"
+            "2️⃣ Или нажмите кнопку <b>«Оплатить в Click»</b> ниже.\n\n"
+            "3️⃣ Или скопируйте USSD-код:\n"
             f"<code>{ussd_code}</code>\n\n"
-            "После проведения платежа нажмите кнопку <b>«Я оплатил(а)»</b>."
+            "После оплаты нажмите кнопку <b>«Я оплатил(а)»</b>."
         )
-        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+        if os.path.exists(QR_FILE_NAME):
+            with open(QR_FILE_NAME, "rb") as photo:
+                await context.bot.send_photo(
+                    chat_id=user_id,
+                    photo=photo,
+                    caption=caption,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode='HTML'
+                )
+        else:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=caption,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='HTML'
+            )
 
     elif data == "paid":
         await query.answer()
@@ -316,7 +357,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         await query.message.reply_text(text, parse_mode='HTML')
         
-        if ADMIN_ID:
+        if ADMIN_ID and str(ADMIN_ID).isdigit():
             admin_text = (
                 f"🚨 <b>Новый заказ №{order_num}</b>\n"
                 f"📞 Тел: {users_db[user_id]['phone']}\n"
@@ -324,7 +365,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🍽 <b>Состав заказа:</b>\n{items_text}"
             )
             try:
-                await context.bot.send_message(chat_id=ADMIN_ID, text=admin_text, parse_mode='HTML')
+                await context.bot.send_message(chat_id=int(ADMIN_ID), text=admin_text, parse_mode='HTML')
             except Exception as e:
                 logging.error(f"Не удалось отправить сообщение админу: {e}")
                 
@@ -352,8 +393,8 @@ async def toggle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Статус приёма заказов изменён: {status}")
 
 def main():
-    if not TOKEN:
-        logging.error("BOT_TOKEN не найден в переменных окружения!")
+    if TOKEN == "YOUR_BOT_TOKEN_HERE" or not TOKEN:
+        logging.error("Укажите BOT_TOKEN в коде или в переменных окружения!")
         return
         
     app = Application.builder().token(TOKEN).post_init(post_init).build()
@@ -366,6 +407,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(CallbackQueryHandler(button_handler))
 
+    logging.info("Бот запущен...")
     app.run_polling()
 
 if __name__ == '__main__':
