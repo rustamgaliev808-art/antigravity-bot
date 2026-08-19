@@ -2,7 +2,7 @@ import os
 import logging
 import asyncio
 from datetime import datetime
-from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 # Настройка логирования
@@ -65,15 +65,20 @@ WEEKLY_MENU = {
     }
 }
 
+def get_main_keyboard():
+    """Постоянная клавиатура внизу экрана"""
+    return ReplyKeyboardMarkup([
+        [KeyboardButton("🍽 Меню"), KeyboardButton("📜 История")],
+        [KeyboardButton("🔄 Перезапустить")]
+    ], resize_keyboard=True)
+
 def get_item_by_id(item_id):
-    """Поиск блюда по ID среди всех дней недели"""
     for day_data in WEEKLY_MENU.values():
         if item_id in day_data['items']:
             return day_data['items'][item_id]
     return None
 
 def get_days_keyboard():
-    """Клавиатура с выбором дней недели"""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📅 Понедельник", callback_data="day_mon"), InlineKeyboardButton("📅 Вторник", callback_data="day_tue")],
         [InlineKeyboardButton("📅 Среда", callback_data="day_wed"), InlineKeyboardButton("📅 Четверг", callback_data="day_thu")],
@@ -81,7 +86,6 @@ def get_days_keyboard():
     ])
 
 def get_order_summary(items_list):
-    """Группирует одинаковые товары и возвращает красивый текст заказа"""
     counts = {}
     for item in items_list:
         name = item['name']
@@ -102,6 +106,15 @@ def get_order_summary(items_list):
     items_str = ", ".join(short_lines)
     return items_text, items_str
 
+async def post_init(application: Application):
+    """Регистрирует кнопку 'Меню' в Telegram поле ввода"""
+    commands = [
+        BotCommand("start", "🔄 Перезапустить бота"),
+        BotCommand("menu", "🍽 Посмотреть меню"),
+        BotCommand("history", "📜 История заказов")
+    ]
+    await application.bot.set_my_commands(commands)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in users_db:
@@ -120,6 +133,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
     else:
+        await update.message.reply_text("Главное меню открыто 👇", reply_markup=get_main_keyboard())
         await menu_command(update, context)
 
 async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -130,14 +144,20 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
             users_db[user_id] = {'phone': None, 'orders_count': 0, 'history': []}
         users_db[user_id]['phone'] = contact.phone_number
         await update.message.reply_text(
-            f"Готово, {update.effective_user.first_name}! Номер сохранён.\nВыберите день недели ниже 👇 (или нажмите /menu)",
-            reply_markup=ReplyKeyboardRemove()
+            f"Готово, {update.effective_user.first_name}! Номер сохранён.",
+            reply_markup=get_main_keyboard()
         )
         await menu_command(update, context)
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    if text == "Отмена":
+    if text == "🍽 Меню":
+        await menu_command(update, context)
+    elif text == "📜 История":
+        await history(update, context)
+    elif text in ["🔄 Перезапустить", "/start"]:
+        await start(update, context)
+    elif text == "Отмена":
         keyboard = [[KeyboardButton("📱 Поделиться номером", request_contact=True)]]
         await update.message.reply_text(
             "Чтобы оформить заказ, нужен номер телефона для выставления счёта. Поделиться сейчас?",
@@ -170,11 +190,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         active_orders[user_id] = {'items': [], 'total': 0}
     order = active_orders[user_id]
 
-    # Возврат к списку дней
     if data == "days_list":
         await query.message.edit_text("<b>📅 Выберите день недели:</b>", reply_markup=get_days_keyboard(), parse_mode='HTML')
 
-    # Выбор конкретного дня
     elif data.startswith("day_"):
         day_code = data.split("_")[1]
         day_info = WEEKLY_MENU.get(day_code)
@@ -198,7 +216,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
-    # Добавление позиции в корзину
     elif data.startswith("add_"):
         item_id = data.split("add_")[1]
         item = get_item_by_id(item_id)
@@ -301,7 +318,7 @@ def main():
         logging.error("BOT_TOKEN не найден в переменных окружения!")
         return
         
-    app = Application.builder().token(TOKEN).build()
+    app = Application.builder().token(TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("menu", menu_command))
