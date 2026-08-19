@@ -66,7 +66,6 @@ WEEKLY_MENU = {
 }
 
 def get_main_keyboard():
-    """Постоянная клавиатура внизу экрана"""
     return ReplyKeyboardMarkup([
         [KeyboardButton("🍽 Меню"), KeyboardButton("📜 История")],
         [KeyboardButton("🔄 Перезапустить")]
@@ -106,8 +105,43 @@ def get_order_summary(items_list):
     items_str = ", ".join(short_lines)
     return items_text, items_str
 
+async def render_day_menu(query, day_code, user_id):
+    """Отображает меню конкретного дня и текущую корзину без перехода на другой экран"""
+    order = active_orders[user_id]
+    order['day'] = day_code
+    day_info = WEEKLY_MENU.get(day_code)
+    if not day_info:
+        return
+
+    text = f"<b>🍽 Меню на {day_info['name']}</b>\n\n"
+    for idx, (item_id, item) in enumerate(day_info['items'].items(), 1):
+        text += f"{idx}️⃣ {item['name']} — {item['price']:,} сум\n".replace(",", " ")
+
+    text += "\n⏰ Приём заказов до 11:00\n📍 Выдача: 4 этаж, 12:30–14:00\n"
+
+    # Выводим текущую корзину прямо под меню дня
+    if order['items']:
+        items_text, _ = get_order_summary(order['items'])
+        text += f"\n🛒 <b>Ваш выбор:</b>\n{items_text}\n\n💰 <b>Итого:</b> {order['total']:,} сум".replace(",", " ")
+
+    keyboard = []
+    row = []
+    for idx, (item_id, item) in enumerate(day_info['items'].items(), 1):
+        row.append(InlineKeyboardButton(f"+ Заказать №{idx}", callback_data=f"add_{item_id}"))
+        if len(row) == 2:
+            keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
+
+    if order['items']:
+        keyboard.append([InlineKeyboardButton(f"🛒 Перейти к оформлению ({order['total']:,} сум)".replace(",", " "), callback_data="checkout")])
+
+    keyboard.append([InlineKeyboardButton("⬅️ Назад к дням", callback_data="days_list")])
+
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+
 async def post_init(application: Application):
-    """Регистрирует кнопку 'Меню' в Telegram поле ввода"""
     commands = [
         BotCommand("start", "🔄 Перезапустить бота"),
         BotCommand("menu", "🍽 Посмотреть меню"),
@@ -174,57 +208,48 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     user_id = query.from_user.id
     data = query.data
 
     if user_id not in users_db or not users_db[user_id].get('phone'):
+        await query.answer()
         await query.message.reply_text("Пожалуйста, поделитесь номером телефона (команда /start)")
         return
 
     if not menu_active and not data.startswith("paid") and data != "cancel":
+        await query.answer()
         await query.message.reply_text("⛔ Приём заказов временно закрыт.")
         return
 
     if user_id not in active_orders:
-        active_orders[user_id] = {'items': [], 'total': 0}
+        active_orders[user_id] = {'items': [], 'total': 0, 'day': 'mon'}
     order = active_orders[user_id]
 
     if data == "days_list":
+        await query.answer()
         await query.message.edit_text("<b>📅 Выберите день недели:</b>", reply_markup=get_days_keyboard(), parse_mode='HTML')
 
     elif data.startswith("day_"):
+        await query.answer()
         day_code = data.split("_")[1]
-        day_info = WEEKLY_MENU.get(day_code)
-        if not day_info:
-            return
-
-        text = f"<b>🍽 Меню на {day_info['name']}</b>\n\n"
-        keyboard = []
-        row = []
-        for idx, (item_id, item) in enumerate(day_info['items'].items(), 1):
-            text += f"{idx}️⃣ {item['name']} — {item['price']:,} сум\n".replace(",", " ")
-            row.append(InlineKeyboardButton(f"Заказать №{idx}", callback_data=f"add_{item_id}"))
-            if len(row) == 2:
-                keyboard.append(row)
-                row = []
-        if row:
-            keyboard.append(row)
-
-        text += "\n⏰ Приём заказов до 11:00\n📍 Выдача: 4 этаж, 12:30–14:00"
-        keyboard.append([InlineKeyboardButton("⬅️ Назад к дням", callback_data="days_list")])
-        
-        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        await render_day_menu(query, day_code, user_id)
 
     elif data.startswith("add_"):
         item_id = data.split("add_")[1]
         item = get_item_by_id(item_id)
-        if not item:
-            return
+        if item:
+            order['items'].append(item)
+            order['total'] += item['price']
+            
+            # Подсчет добавленного товара для всплывающего уведомления
+            cnt = sum(1 for i in order['items'] if i['name'] == item['name'])
+            await query.answer(f"Добавлено: {item['name']} (x{cnt})")
+            
+            # Обновляем это же сообщение с новым выбором
+            await render_day_menu(query, order.get('day', 'mon'), user_id)
 
-        order['items'].append(item)
-        order['total'] += item['price']
-
+    elif data == "checkout":
+        await query.answer()
         items_text, _ = get_order_summary(order['items'])
         text = (
             f"<b>Проверьте Ваш заказ:</b>\n\n{items_text}\n\n"
@@ -233,16 +258,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         keyboard = [
             [InlineKeyboardButton("✅ Подтвердить", callback_data="confirm")],
-            [InlineKeyboardButton("➕ Добавить ещё", callback_data="days_list")],
+            [InlineKeyboardButton("➕ Добавить ещё", callback_data=f"day_{order.get('day', 'mon')}")],
             [InlineKeyboardButton("❌ Отмена", callback_data="cancel")]
         ]
-        await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
     elif data == "cancel":
+        await query.answer()
         active_orders.pop(user_id, None)
         await query.message.reply_text("Заказ отменён.")
 
     elif data == "confirm":
+        await query.answer()
         await query.message.reply_text("⏳ Выставляю счёт...")
         await asyncio.sleep(1.5)
         
@@ -255,6 +282,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif data == "paid":
+        await query.answer()
         if not order.get('items'):
             await query.message.reply_text("Заказ уже обработан или отменен.")
             return
