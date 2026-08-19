@@ -134,8 +134,9 @@ async def render_day_menu(query, day_code, user_id):
         keyboard.append(row)
 
     if order['items']:
-        # Заметная контрастная кнопка оформления заказа
-        keyboard.append([InlineKeyboardButton(f"🛍 ОФОРМИТЬ ЗАКАЗ ({order['total']:,} сум) ➡️".replace(",", " "), callback_data="checkout")])
+        total_count = len(order['items'])
+        # Без розового цвета, с выводом количества штук
+        keyboard.append([InlineKeyboardButton(f"✅ ОФОРМИТЬ ЗАКАЗ ({total_count} шт. — {order['total']:,} сум) ➡️".replace(",", " "), callback_data="checkout")])
 
     keyboard.append([InlineKeyboardButton("⬅️ Назад к дням", callback_data="days_list")])
 
