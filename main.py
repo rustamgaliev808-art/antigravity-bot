@@ -44,7 +44,6 @@ try:
 except (ValueError, TypeError):
     ADMIN_ID = None
 
-# Новая чистая база данных
 DB_NAME = 'delivery_bot_v8.db'
 menu_active = True
 
@@ -63,53 +62,43 @@ DEFAULT_CATEGORIES = [
 ]
 
 DEFAULT_ITEMS = [
-    # ЗАВТРАКИ
     ('breakfasts', 'Яичница с сосисками', 'Классический сытный завтрак из яиц и сосисок.', 40000, ''),
     ('breakfasts', 'Омлет', 'Пышный свежеприготовленный омлет.', 35000, ''),
     ('breakfasts', 'Гренки 4 шт', 'Золотистые поджаренные гренки.', 20000, ''),
     ('breakfasts', 'Овсяная каша', 'Вкусная и полезная овсяная каша.', 25000, ''),
     ('breakfasts', 'Сендвич с говядиной и сыром', 'Сытный сендвич с говядиной и расплавленным сыром.', 32000, ''),
     
-    # ГОРЯЧИЕ НАПИТКИ
     ('hot_drinks', 'Американо', 'Классический черный кофе.', 18000, ''),
     ('hot_drinks', 'Капучино', 'Кофе с пышной молочной пеной.', 20000, ''),
     ('hot_drinks', 'Латте', 'Мягкий кофейный напиток с большим количеством молока.', 22000, ''),
     ('hot_drinks', 'Флэт Уайт', 'Насыщенный кофе с бархатистой молочной пеной.', 30000, ''),
     
-    # ХОЛОДНЫЕ НАПИТКИ
     ('cold_drinks', 'Кола 0.25 / Кола (Zero)', 'Освежающая газировка.', 13000, ''),
     ('cold_drinks', 'Fanta 0.25', 'Апельсиновая газировка.', 12000, ''),
     ('cold_drinks', 'Мохито (Клас. / Клубничный)', 'Охлаждающий напиток.', 20000, ''),
     ('cold_drinks', 'Chortoq 0.25 (с газом)', 'Минеральная газированная вода.', 12000, ''),
     
-    # ФРЕШИ
     ('fresh_drinks', 'Яблочный фреш', 'Свежевыжатый сок из зеленых яблок (250 мл).', 30000, ''),
     ('fresh_drinks', 'Фреш Морковь-Яблоко', 'Витаминный заряд (250 мл).', 30000, ''),
     ('fresh_drinks', 'Фреш Детокс', 'Свекла, яблоко, морковь (250 мл).', 32000, ''),
 
-    # ПОДПИСКИ
     ('subs', 'Подписка: 1 нед (Курица)', 'Комплексные обеды с курицей на 5 рабочих дней.', 290000, ''),
     ('subs', 'Подписка: 1 нед (Говядина)', 'Комплексные обеды с говядиной на 5 рабочих дней.', 310000, ''),
     ('subs', 'Подписка: 4 нед (Курица)', 'Обеды с курицей на месяц (20 дней). Выгода 10%!', 1044000, ''),
     ('subs', 'Подписка: 4 нед (Говядина)', 'Обеды с говядиной на месяц (20 дней). Выгода 10%!', 1116000, ''),
 
-    # ПОНЕДЕЛЬНИК
     ('mon', 'Пн. Комплекс (Говядина)', 'Тефтели с гречкой + Салат Винегрет + Компот', 62000, ''),
     ('mon', 'Пн. Комплекс (Курица)', 'Курица в сливочном соусе с рисом + Салат Винегрет + Компот', 58000, ''),
     
-    # ВТОРНИК
     ('tue', 'Вт. Комплекс (Говядина)', 'Тушеная говядина с картофелем + Овощной салат + Компот', 62000, ''),
     ('tue', 'Вт. Комплекс (Курица)', 'Запеченная курица с сыром и помидорами с пюре + Овощной салат + Компот', 58000, ''),
     
-    # СРЕДА
     ('wed', 'Ср. Комплекс (Говядина)', 'Бефстроганов (с пюре/рисом) + Салат Греческий + Компот', 62000, ''),
     ('wed', 'Ср. Комплекс (Курица)', 'Куриный казан-кабоб + Салат Греческий + Компот', 58000, ''),
     
-    # ЧЕТВЕРГ
     ('thu', 'Чт. Комплекс (Говядина)', 'Плов из говядины + Салат Ачик-чучук + Компот', 62000, ''),
     ('thu', 'Чт. Комплекс (Курица)', 'Курица с овощами с пюре + Салат Ачик-чучук + Компот', 58000, ''),
     
-    # ПЯТНИЦА
     ('fri', 'Пт. Комплекс (Говядина)', 'Гуляш из говядины (с рисом/гречкой) + Салат Цезарь + Компот', 62000, ''),
     ('fri', 'Пт. Комплекс (Курица)', 'Запеченные куриные бедра (с рисом/гречкой) + Салат Цезарь + Компот', 58000, '')
 ]
@@ -260,29 +249,22 @@ def get_category_list_keyboard(user_id, cat_id, items):
     keyboard.append([InlineKeyboardButton("🛍 В корзину", callback_data="cart_list"), InlineKeyboardButton("🔙 Назад", callback_data=back_data)])
     return InlineKeyboardMarkup(keyboard)
 
-# ==================== БРОНЕБОЙНАЯ ОТПРАВКА СООБЩЕНИЙ ====================
+# ==================== ОТПРАВКА СООБЩЕНИЙ ====================
 async def edit_media_message(chat_id, message_id, photo_source, caption, reply_markup, context):
     try:
-        # Пробуем заменить картинку и текст
-        if not photo_source:
-            raise ValueError("No photo")
+        if not photo_source: raise ValueError("No photo")
         media = InputMediaPhoto(media=photo_source, caption=caption, parse_mode='HTML')
         await context.bot.edit_message_media(chat_id=chat_id, message_id=message_id, media=media, reply_markup=reply_markup)
     except Exception as e:
-        # Если не получилось, удаляем старое сообщение
         try: await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
         except Exception: pass
-        
-        # Пытаемся отправить как новое сообщение с картинкой
         try:
             if photo_source:
                 msg = await context.bot.send_photo(chat_id=chat_id, photo=photo_source, caption=caption, reply_markup=reply_markup, parse_mode='HTML')
             else:
                 msg = await context.bot.send_message(chat_id=chat_id, text=caption, reply_markup=reply_markup, parse_mode='HTML')
         except Exception:
-            # Абсолютный fallback: если Telegram блокирует картинку, шлем просто текст!
             msg = await context.bot.send_message(chat_id=chat_id, text=caption, reply_markup=reply_markup, parse_mode='HTML')
-            
         context.user_data['last_msg_id'] = msg.message_id
 
 async def render_start(chat_id, context):
@@ -293,7 +275,6 @@ async def render_start(chat_id, context):
     try:
         msg = await context.bot.send_photo(chat_id=chat_id, photo=MAIN_BANNER, caption=caption, reply_markup=get_main_keyboard(), parse_mode='HTML')
     except Exception:
-        # Fallback на случай блокировки картинки
         msg = await context.bot.send_message(chat_id=chat_id, text=caption, reply_markup=get_main_keyboard(), parse_mode='HTML')
     context.user_data['last_msg_id'] = msg.message_id
 
@@ -315,6 +296,52 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ Номер сохранён.", reply_markup=ReplyKeyboardRemove())
         await render_start(user_id, context)
 
+# --- НОВЫЙ БЛОК: УМНАЯ ПУБЛИКАЦИЯ В КАНАЛ ---
+async def post_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not ADMIN_ID or user_id != ADMIN_ID:
+        await update.message.reply_text("⛔ У вас нет прав администратора.")
+        return
+
+    weekday = datetime.now().weekday()
+    
+    posts_by_day = {
+        0: ("<b>Начинаем неделю вкусно и продуктивно! ☀️</b>\n\nСегодня на обед мы приготовили для вас домашние комплексы. В каждый сет по умолчанию входит салат <b>Винегрет</b> и освежающий компот! 🍹\n\n<b>На выбор:</b>\n🥩 Сочные тефтели из говядины с рассыпчатой гречкой — <i>62 000 сум</i>\n🍗 Нежная курица в сливочном соусе с рисом — <i>58 000 сум</i>\n\nУспейте сделать заказ до 11:00!", LUNCH_BANNER),
+        1: ("<b>Время сытного обеда! Что у нас сегодня? 😋</b>\n\nНаши комплексные обеды уже ждут вас. Напоминаем: компот и свежий овощной салат уже включены в стоимость! 🥗🥤\n\n<b>На выбор:</b>\n🥩 Тушеная говядина с тающим во рту картофелем — <i>62 000 сум</i>\n🍗 Куриное филе под сырно-томатной корочкой с воздушным пюре — <i>58 000 сум</i>\n\nЗарядитесь энергией на вторую половину дня!", LUNCH_BANNER),
+        2: ("<b>Экватор рабочей недели! Порадуйте себя вкусным обедом 🍽</b>\n\nСегодня в нашем меню настоящие хиты! В качестве легкого старта в каждом комплексе вас ждет <b>Греческий салат</b> и прохладный компот. 🍅🥒\n\n<b>Горячее на выбор:</b>\n🥩 Классический Бефстроганов (пюре/рис) — <i>62 000 сум</i>\n🍗 Ароматный куриный казан-кабоб — <i>58 000 сум</i>\n\nВыбирайте то, что нравится больше!", LUNCH_BANNER),
+        3: ("<b>Четверг — день Плова! 🍚🔥</b>\n\nКакая же неделя без традиционного плова? Сегодня мы подаем его с классическим салатом <b>Ачик-чучук</b> (или соленьями) и компотом.\n\n<b>Наши комплексы на сегодня:</b>\n🥩 Традиционный плов из говядины — <i>62 000 сум</i>\n🍗 Сочная курица с овощами и домашним пюре — <i>58 000 сум</i>\n\nПорции разлетаются быстро!", LUNCH_BANNER),
+        4: ("<b>Пятница! Вкусно завершаем рабочую неделю 🎉</b>\n\nСегодня к горячему мы подаем всеми любимый салат <b>Цезарь</b> и наш фирменный компот! 🥬🍹\n\n<b>Выбирайте свой комплекс:</b>\n🥩 Сытный гуляш из говядины (рис/гречка) — <i>62 000 сум</i>\n🍗 Румяные запеченные куриные бедра (рис/гречка) — <i>58 000 сум</i>\n\nСпасибо, что обедали с нами всю неделю!", LUNCH_BANNER)
+    }
+
+    if weekday not in posts_by_day:
+        await update.message.reply_text("Сегодня выходной! Готовых текстов для выходных нет.")
+        return
+
+    text, photo = posts_by_day[weekday]
+    
+    # Получаем юзернейм бота, чтобы кнопка вела именно на него
+    bot_info = await context.bot.get_me()
+    bot_url = f"https://t.me/{bot_info.username}"
+    
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🥗 Заказать обед в 2 клика", url=bot_url)]])
+
+    try:
+        await context.bot.send_photo(chat_id=CHANNEL_ID, photo=photo, caption=text, reply_markup=keyboard, parse_mode='HTML')
+        await update.message.reply_text(f"✅ Успешно! Пост на сегодняшний день отправлен в канал {CHANNEL_ID}.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка отправки: {e}\nУбедитесь, что бот является Администратором в канале {CHANNEL_ID}!")
+
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not ADMIN_ID or user_id != ADMIN_ID: return
+    
+    keyboard = [
+        [InlineKeyboardButton("⛔ Открыть/Закрыть прием заказов", callback_data="admin_toggle")]
+    ]
+    await update.message.reply_text("👑 <b>Панель администратора</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+
+# ----------------------------------------------------
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
@@ -324,6 +351,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "ignore":
         await query.answer()
+        return
+
+    # Админские кнопки
+    if data == "admin_toggle":
+        if not ADMIN_ID or user_id != ADMIN_ID: return
+        global menu_active
+        menu_active = not menu_active
+        status = "ОТКРЫТ ✅" if menu_active else "ЗАКРЫТ ⛔"
+        await query.answer(f"Прием заказов: {status}", show_alert=True)
         return
 
     # НАВИГАЦИЯ
@@ -346,9 +382,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if weekday in days_map:
             cat_id = days_map[weekday]
-            data = f"cat_{cat_id}" # Перенаправляем логику на показ категории
+            data = f"cat_{cat_id}" 
         else:
-            await query.answer("Сегодня выходной! 😴\nНо вы можете сделать предзаказ на следующую неделю через меню.", show_alert=True)
+            await query.answer("Сегодня выходной! 😴\nВы можете сделать предзаказ через 'Недельное меню'.", show_alert=True)
             return
 
     # ПРОСМОТР КАТЕГОРИЙ (ЕДИНЫМ СПИСКОМ)
@@ -475,7 +511,12 @@ async def handle_health_check(request): return web.Response(text="Bot OK")
 
 async def main():
     app_bot = Application.builder().token(TOKEN).build()
+    
+    # ВОТ ЗДЕСЬ ДОБАВЛЕНЫ КОМАНДЫ /post и /admin !
     app_bot.add_handler(CommandHandler("start", start))
+    app_bot.add_handler(CommandHandler("post", post_to_channel))
+    app_bot.add_handler(CommandHandler("admin", admin_command))
+    
     app_bot.add_handler(MessageHandler(filters.CONTACT, handle_contact))
     app_bot.add_handler(CallbackQueryHandler(button_handler))
 
