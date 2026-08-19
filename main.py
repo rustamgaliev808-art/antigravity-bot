@@ -11,6 +11,12 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID")) if os.getenv("ADMIN_ID") and os.getenv("ADMIN_ID").isdigit() else os.getenv("ADMIN_ID")
 
+# Настройки Click (Замените на свои данные или укажите готовую ссылку)
+CLICK_SERVICE_ID = os.getenv("CLICK_SERVICE_ID", "12345")
+CLICK_MERCHANT_ID = os.getenv("CLICK_MERCHANT_ID", "67890")
+# Если у вас прямая ссылка на Click Pass / Оплату на местах, вставьте её сюда:
+CLICK_DIRECT_URL = os.getenv("CLICK_DIRECT_URL", "") 
+
 # Хранение данных в памяти
 users_db = {} 
 active_orders = {}
@@ -106,7 +112,6 @@ def get_order_summary(items_list):
     return items_text, items_str
 
 async def render_day_menu(query, day_code, user_id):
-    """Отображает меню конкретного дня и текущую корзину"""
     order = active_orders[user_id]
     order['day'] = day_code
     day_info = WEEKLY_MENU.get(day_code)
@@ -135,7 +140,6 @@ async def render_day_menu(query, day_code, user_id):
 
     if order['items']:
         total_count = len(order['items'])
-        # Без розового цвета, с выводом количества штук
         keyboard.append([InlineKeyboardButton(f"✅ ОФОРМИТЬ ЗАКАЗ ({total_count} шт. — {order['total']:,} сум) ➡️".replace(",", " "), callback_data="checkout")])
 
     keyboard.append([InlineKeyboardButton("⬅️ Назад к дням", callback_data="days_list")])
@@ -269,16 +273,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "confirm":
         await query.answer()
-        await query.message.reply_text("⏳ Выставляю счёт...")
-        await asyncio.sleep(1.5)
         
-        keyboard = [[InlineKeyboardButton("💳 Я оплатил(а) (Тест)", callback_data="paid")]]
-        await query.message.reply_text(
-            f"💳 Счёт на {order['total']:,} сум выставлен.\n\n".replace(",", " ") +
-            "Откройте приложение для оплаты → уведомления → оплатите счёт.\n"
-            "Как только оплата пройдёт, нажмите кнопку ниже.",
-            reply_markup=InlineKeyboardMarkup(keyboard)
+        amount = order['total']
+        
+        # Формирование ссылки для оплаты Click
+        if CLICK_DIRECT_URL:
+            click_url = CLICK_DIRECT_URL
+        else:
+            # Генерация ссылки счета Click с подстановкой суммы и ID пользователя
+            click_url = f"https://my.click.uz/services/pay?service_id={CLICK_SERVICE_ID}&merchant_id={CLICK_MERCHANT_ID}&amount={amount}&transaction_param={user_id}"
+
+        keyboard = [
+            [InlineKeyboardButton("💳 Оплатить через Click", url=click_url)],
+            [InlineKeyboardButton("✅ Я оплатил(а)", callback_data="paid")]
+        ]
+        
+        text = (
+            f"💳 <b>Счёт на {amount:,} сум сформирован!</b>\n\n".replace(",", " ") +
+            "1️⃣ Нажмите кнопку <b>«Оплатить через Click»</b> ниже для перехода к оплате.\n"
+            "2️⃣ После подтверждения платежа в приложении Click нажмите <b>«Я оплатил(а)»</b>."
         )
+        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
     elif data == "paid":
         await query.answer()
