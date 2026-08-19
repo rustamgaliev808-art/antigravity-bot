@@ -4,17 +4,13 @@ import sys
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import CommandStart
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.exceptions import TelegramUnauthorizedError
 
 # ==================== НАСТРОЙКИ ====================
-# Вставьте сюда ваш токен от @BotFather
+# Укажите ваш токен от @BotFather
 BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
 
-# Инициализация бота и диспетчера
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
-
 # ==================== БАЗА ДАННЫХ МЕНЮ ====================
-# Вы можете менять названия, описания, цены и ссылки на фото
 MENU_DATA = {
     "days": {
         "mon": {
@@ -130,7 +126,7 @@ MENU_DATA = {
                 },
                 {
                     "name": "Куриные рулетики с сыром",
-                    "description": "Запеченное рулетики из филе с начинкой из сыра и зелени.",
+                    "description": "Запеченные рулетики из филе с начинкой из сыра и зелени.",
                     "price": "42 000 сум",
                     "image": "https://picsum.photos/400/300?random=114"
                 }
@@ -230,10 +226,14 @@ drinks_kb = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
+# ==================== ИНИЦИАЛИЗАЦИЯ ====================
+
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
 async def send_menu_cards(message: types.Message, items: list, title: str):
-    """Функция для отправки блюд в виде карточек с фото, описанием и ценой."""
     await message.answer(f"<b>=== {title} ===</b>", parse_mode="HTML")
     
     for item in items:
@@ -249,10 +249,10 @@ async def send_menu_cards(message: types.Message, items: list, title: str):
                 parse_mode="HTML"
             )
         except Exception as e:
-            logging.error(f"Ошибка при отправке фото: {e}")
+            logging.error(f"Ошибка при отправке картинки: {e}")
             await message.answer(caption, parse_mode="HTML")
 
-# ==================== ОБРАБОТЧИКИ (ХЕНДЛЕРЫ) ====================
+# ==================== ХЕНДЛЕРЫ ====================
 
 @dp.message(CommandStart())
 @dp.message(F.text == "⬅️ Главное меню")
@@ -268,9 +268,8 @@ async def show_days_keyboard(message: types.Message):
 
 @dp.message(F.text == "☕ Напитки")
 async def show_drinks_keyboard(message: types.Message):
-    await message.answer("Выберите категории напитков:", reply_markup=drinks_kb)
+    await message.answer("Выберите категорию напитков:", reply_markup=drinks_kb)
 
-# Обработка выбора дня недели
 DAY_MAP = {
     "Понедельник": "mon",
     "Вторник": "tue",
@@ -287,13 +286,11 @@ async def handle_days(message: types.Message):
     day_info = MENU_DATA["days"][day_key]
     await send_menu_cards(message, day_info["items"], f"Меню на {message.text}")
 
-# Обработка завтраков и снеков
 @dp.message(F.text == "🍳 Завтраки и снеки")
 async def handle_breakfasts(message: types.Message):
     items = MENU_DATA["breakfast_snacks"]
     await send_menu_cards(message, items, "Завтраки и снеки")
 
-# Обработка напитков (Горячие / Холодные)
 @dp.message(F.text == "🔥 Горячие напитки")
 async def handle_hot_drinks(message: types.Message):
     items = MENU_DATA["drinks"]["hot"]
@@ -304,12 +301,25 @@ async def handle_cold_drinks(message: types.Message):
     items = MENU_DATA["drinks"]["cold"]
     await send_menu_cards(message, items, "Холодные напитки")
 
-# ==================== ЗАПУСК БОТА ====================
+# ==================== ЗАПУСК ====================
 
 async def main():
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
-    print(">>> Бот успешно запущен и готов к работе! <<<")
-    await dp.start_polling(bot)
+    
+    if BOT_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN" or not BOT_TOKEN:
+        print("❌ ОШИБКА: Замените 'YOUR_TELEGRAM_BOT_TOKEN' на настоящий токен от @BotFather!")
+        return
+
+    try:
+        print(">>> Бот запущен и готов к работе! <<<")
+        await dp.start_polling(bot)
+    except TelegramUnauthorizedError:
+        print("❌ ОШИБКА: Указан неверный токен бота!")
+    except Exception as e:
+        print(f"❌ ОШИБКА при работе бота: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Бот остановлен.")
