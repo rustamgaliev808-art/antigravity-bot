@@ -44,8 +44,8 @@ try:
 except (ValueError, TypeError):
     ADMIN_ID = None
 
-# Сменили имя БД для чистой загрузки нового меню
-DB_NAME = 'delivery_bot_v5.db'
+# База данных
+DB_NAME = 'delivery_bot_v6.db'
 menu_active = True
 
 # ==================== ДАННЫЕ МЕНЮ ПО УМОЛЧАНИЮ ====================
@@ -61,40 +61,40 @@ DEFAULT_CATEGORIES = [
 ]
 
 DEFAULT_ITEMS = [
-    # ЗАВТРАКИ (Новые цены и позиции)
-    ('breakfasts', 'Яичница с сосисками', 'Классический сытный завтрак из яиц и сосисок.', 40000, 'https://picsum.photos/400/300?random=201'),
-    ('breakfasts', 'Омлет', 'Пышный свежеприготовленный омлет.', 35000, 'https://picsum.photos/400/300?random=202'),
-    ('breakfasts', 'Гренки 4 шт', 'Золотистые поджаренные гренки (4 штуки).', 20000, 'https://picsum.photos/400/300?random=203'),
-    ('breakfasts', 'Овсяная каша', 'Вкусная и полезная овсяная каша.', 25000, 'https://picsum.photos/400/300?random=204'),
-    ('breakfasts', 'Сендвич с говядиной и сыром', 'Сытный сендвич с говядиной и расплавленным сыром.', 32000, 'https://picsum.photos/400/300?random=205'),
+    # ЗАВТРАКИ
+    ('breakfasts', 'Яичница с сосисками', 'Классический сытный завтрак из яиц и сосисок.', 40000, ''),
+    ('breakfasts', 'Омлет', 'Пышный свежеприготовленный омлет.', 35000, ''),
+    ('breakfasts', 'Гренки 4 шт', 'Золотистые поджаренные гренки (4 штуки).', 20000, ''),
+    ('breakfasts', 'Овсяная каша', 'Вкусная и полезная овсяная каша.', 25000, ''),
+    ('breakfasts', 'Сендвич с говядиной и сыром', 'Сытный сендвич с говядиной и расплавленным сыром.', 32000, ''),
     
-    # ГОРЯЧИЕ НАПИТКИ (Новые цены и позиции)
-    ('hot_drinks', 'Американо', 'Классический черный кофе.', 18000, 'https://picsum.photos/400/300?random=301'),
-    ('hot_drinks', 'Капучино', 'Кофе с пышной молочной пеной.', 20000, 'https://picsum.photos/400/300?random=302'),
-    ('hot_drinks', 'Латте', 'Мягкий кофейный напиток с большим количеством молока.', 22000, 'https://picsum.photos/400/300?random=303'),
-    ('hot_drinks', 'Флэт Уайт', 'Насыщенный кофе с бархатистой молочной пеной.', 30000, 'https://picsum.photos/400/300?random=304'),
+    # ГОРЯЧИЕ НАПИТКИ
+    ('hot_drinks', 'Американо', 'Классический черный кофе.', 18000, ''),
+    ('hot_drinks', 'Капучино', 'Кофе с пышной молочной пеной.', 20000, ''),
+    ('hot_drinks', 'Латте', 'Мягкий кофейный напиток с большим количеством молока.', 22000, ''),
+    ('hot_drinks', 'Флэт Уайт', 'Насыщенный кофе с бархатистой молочной пеной.', 30000, ''),
     
-    # ХОЛОДНЫЕ НАПИТКИ (Новые цены и позиции)
-    ('cold_drinks', 'Кола 0.25 / Кола (Zero)', 'Освежающая газировка.', 13000, 'https://picsum.photos/400/300?random=311'),
-    ('cold_drinks', 'Fanta 0.25', 'Апельсиновая газировка.', 12000, 'https://picsum.photos/400/300?random=312'),
-    ('cold_drinks', 'Мохито (Клас. / Клубничный)', 'Охлаждающий напиток.', 20000, 'https://picsum.photos/400/300?random=313'),
-    ('cold_drinks', 'Chortoq 0.25 (с газом)', 'Минеральная газированная вода.', 12000, 'https://picsum.photos/400/300?random=314'),
+    # ХОЛОДНЫЕ НАПИТКИ
+    ('cold_drinks', 'Кола 0.25 / Кола (Zero)', 'Освежающая газировка.', 13000, ''),
+    ('cold_drinks', 'Fanta 0.25', 'Апельсиновая газировка.', 12000, ''),
+    ('cold_drinks', 'Мохито (Клас. / Клубничный)', 'Охлаждающий напиток.', 20000, ''),
+    ('cold_drinks', 'Chortoq 0.25 (с газом)', 'Минеральная газированная вода.', 12000, ''),
     
     # ФРЕШИ
-    ('fresh_drinks', 'Яблочный фреш', 'Свежевыжатый сок из зеленых яблок (250 мл).', 30000, 'https://picsum.photos/400/300?random=321'),
-    ('fresh_drinks', 'Фреш Морковь-Яблоко', 'Витаминный заряд (250 мл).', 30000, 'https://picsum.photos/400/300?random=322'),
-    ('fresh_drinks', 'Фреш Детокс', 'Свекла, яблоко, морковь (250 мл).', 32000, 'https://picsum.photos/400/300?random=323'),
+    ('fresh_drinks', 'Яблочный фреш', 'Свежевыжатый сок из зеленых яблок (250 мл).', 30000, ''),
+    ('fresh_drinks', 'Фреш Морковь-Яблоко', 'Витаминный заряд (250 мл).', 30000, ''),
+    ('fresh_drinks', 'Фреш Детокс', 'Свекла, яблоко, морковь (250 мл).', 32000, ''),
 
     # ПОДПИСКИ
-    ('subs', 'Подписка: 1 неделя', 'Комплексные обеды на 5 рабочих дней.', 350000, SUBS_BANNER),
-    ('subs', 'Подписка: 4 недели', 'Комплексные обеды на целый месяц (20 дней). Выгода 10%!', 1260000, SUBS_BANNER),
+    ('subs', 'Подписка: 1 неделя', 'Комплексные обеды на 5 рабочих дней.', 350000, ''),
+    ('subs', 'Подписка: 4 недели', 'Комплексные обеды на целый месяц (20 дней). Выгода 10%!', 1260000, ''),
 
     # ИНФО МЕНЮ ПО ДНЯМ
-    ('mon', 'Меню Понедельника', 'Горячее: Курица/Мясо. Гарнир: Рис/Гречка. + Салат и Компот', 0, MAIN_BANNER),
-    ('tue', 'Меню Вторника', 'Горячее: Курица/Мясо. Гарнир: Пюре/Макароны. + Салат и Компот', 0, MAIN_BANNER),
-    ('wed', 'Меню Среды', 'Горячее: Курица/Мясо. Гарнир: Рис/Гречка. + Салат и Компот', 0, MAIN_BANNER),
-    ('thu', 'Меню Четверга', 'Горячее: Курица/Мясо. Гарнир: Пюре/Макароны. + Салат и Компот', 0, MAIN_BANNER),
-    ('fri', 'Меню Пятницы', 'Плов Ташкентский + Салат Ачик-Чучук + Компот', 0, MAIN_BANNER)
+    ('mon', 'Меню Понедельника', 'Горячее: Курица/Мясо. Гарнир: Рис/Гречка. + Салат и Компот', 0, ''),
+    ('tue', 'Меню Вторника', 'Горячее: Курица/Мясо. Гарнир: Пюре/Макароны. + Салат и Компот', 0, ''),
+    ('wed', 'Меню Среды', 'Горячее: Курица/Мясо. Гарнир: Рис/Гречка. + Салат и Компот', 0, ''),
+    ('thu', 'Меню Четверга', 'Горячее: Курица/Мясо. Гарнир: Пюре/Макароны. + Салат и Компот', 0, ''),
+    ('fri', 'Меню Пятницы', 'Плов Ташкентский + Салат Ачик-Чучук + Компот', 0, '')
 ]
 
 # ==================== РАБОТА С БД ====================
@@ -119,6 +119,14 @@ def seed_menu_if_empty():
         cursor.executemany("INSERT INTO menu_items (cat_id, name, description, price, image) VALUES (?, ?, ?, ?, ?)", DEFAULT_ITEMS)
     conn.commit()
     conn.close()
+
+def get_category_info(cat_id):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, banner FROM menu_categories WHERE id = ?", (cat_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return {"id": row[0], "name": row[1], "banner": row[2]} if row else None
 
 def get_items_by_cat(cat_id):
     conn = sqlite3.connect(DB_NAME)
@@ -185,49 +193,57 @@ def get_order_summary(user_id):
 # ==================== КЛАВИАТУРЫ ====================
 def get_main_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🍳 Завтраки", callback_data="cat_breakfasts_0")],
+        [InlineKeyboardButton("🍳 Завтраки", callback_data="cat_breakfasts")],
         [InlineKeyboardButton("🍱 Комплексный обед дня", callback_data="lunch_build_start")],
         [InlineKeyboardButton("🥤 Напитки", callback_data="nav_drinks")],
         [InlineKeyboardButton("🗓 Недельное меню (просмотр)", callback_data="nav_week")],
-        [InlineKeyboardButton("💳 Подписки на обеды", callback_data="cat_subs_0")],
+        [InlineKeyboardButton("💳 Подписки на обеды", callback_data="cat_subs")],
         [InlineKeyboardButton("🛍 Корзина", callback_data="cart_list"), InlineKeyboardButton("📜 История", callback_data="history_list")]
     ])
 
 def get_drinks_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔥 Горячие напитки", callback_data="cat_hot_drinks_0")],
-        [InlineKeyboardButton("🧊 Холодные напитки", callback_data="cat_cold_drinks_0")],
-        [InlineKeyboardButton("🍹 Фреши", callback_data="cat_fresh_drinks_0")],
+        [InlineKeyboardButton("🔥 Горячие напитки", callback_data="cat_hot_drinks")],
+        [InlineKeyboardButton("🧊 Холодные напитки", callback_data="cat_cold_drinks")],
+        [InlineKeyboardButton("🍹 Фреши", callback_data="cat_fresh_drinks")],
         [InlineKeyboardButton("⬅️ Назад", callback_data="home")]
     ])
 
 def get_week_menu_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Пн", callback_data="cat_mon_0"), InlineKeyboardButton("Вт", callback_data="cat_tue_0"), InlineKeyboardButton("Ср", callback_data="cat_wed_0")],
-        [InlineKeyboardButton("Чт", callback_data="cat_thu_0"), InlineKeyboardButton("Пт", callback_data="cat_fri_0")],
+        [InlineKeyboardButton("Пн", callback_data="cat_mon"), InlineKeyboardButton("Вт", callback_data="cat_tue"), InlineKeyboardButton("Ср", callback_data="cat_wed")],
+        [InlineKeyboardButton("Чт", callback_data="cat_thu"), InlineKeyboardButton("Пт", callback_data="cat_fri")],
         [InlineKeyboardButton("⬅️ Назад", callback_data="home")]
     ])
 
-def get_item_pagination_keyboard(cat_id, item_index, item_id, total_items, cart_count=0, is_info=False):
+def get_category_list_keyboard(user_id, cat_id, items, is_info=False):
     keyboard = []
     
     if not is_info:
-        add_text = f"➕ Добавить ({cart_count})" if cart_count > 0 else "➕ Добавить"
-        keyboard.append([
-            InlineKeyboardButton("➖ Удалить", callback_data=f"remove_item_{cat_id}_{item_index}_{item_id}"),
-            InlineKeyboardButton(add_text, callback_data=f"add_item_{cat_id}_{item_index}_{item_id}")
-        ])
+        cart = get_cart_db(user_id)
+        for item in items:
+            item_id = item['id']
+            count = cart.get(item_id, {}).get('count', 0)
+            price_formatted = f"{item['price']:,}".replace(",", " ")
+            
+            if count == 0:
+                keyboard.append([InlineKeyboardButton(f"➕ {item['name']} — {price_formatted} сум", callback_data=f"list_add_{cat_id}_{item_id}")])
+            else:
+                keyboard.append([
+                    InlineKeyboardButton("➖", callback_data=f"list_rm_{cat_id}_{item_id}"),
+                    InlineKeyboardButton(f"{item['name']} (В корзине: {count})", callback_data="ignore"),
+                    InlineKeyboardButton("➕", callback_data=f"list_add_{cat_id}_{item_id}")
+                ])
 
-    pagination_row = []
-    if item_index > 0: pagination_row.append(InlineKeyboardButton("⬅️ Пред.", callback_data=f"view_item_{cat_id}_{item_index - 1}_{item_id}"))
-    if item_index < total_items - 1: pagination_row.append(InlineKeyboardButton("След. ➡️", callback_data=f"view_item_{cat_id}_{item_index + 1}_{item_id}"))
-    if pagination_row: keyboard.append(pagination_row)
-    
     back_data = "home"
     if cat_id in ['hot_drinks', 'cold_drinks', 'fresh_drinks']: back_data = "nav_drinks"
     elif cat_id in ['mon', 'tue', 'wed', 'thu', 'fri']: back_data = "nav_week"
         
-    keyboard.append([InlineKeyboardButton("🛍 В корзину", callback_data="cart_list"), InlineKeyboardButton("🔙 Назад", callback_data=back_data)])
+    if not is_info:
+        keyboard.append([InlineKeyboardButton("🛍 В корзину", callback_data="cart_list"), InlineKeyboardButton("🔙 Назад", callback_data=back_data)])
+    else:
+        keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=back_data)])
+        
     return InlineKeyboardMarkup(keyboard)
 
 # ==================== ОТПРАВКА СООБЩЕНИЙ ====================
@@ -272,6 +288,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     init_db()
     last_msg_id = context.user_data.get('last_msg_id')
+
+    if data == "ignore":
+        await query.answer()
+        return
 
     # НАВИГАЦИЯ
     if data == "home":
@@ -322,52 +342,71 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("✅ Обед собран и добавлен в корзину!", show_alert=True)
         await edit_media_message(user_id, last_msg_id, MAIN_BANNER, "🏠 <b>Главное меню 👇</b>", get_main_keyboard(), context)
 
-    # ПРОСМОТР КАТЕГОРИЙ И ДОБАВЛЕНИЕ
-    elif data.startswith("cat_") or data.startswith("view_item_"):
+    # ПРОСМОТР КАТЕГОРИЙ (ЕДИНЫМ СПИСКОМ)
+    elif data.startswith("cat_"):
         await query.answer()
-        parts = data.split("_")
-        cat_id = parts[1] if data.startswith("cat_") else parts[2]
-        item_index = int(parts[2]) if data.startswith("cat_") else int(parts[3])
+        cat_id = data[4:] # Убираем "cat_"
         
         items = get_items_by_cat(cat_id)
-        if not items: return
+        cat_info = get_category_info(cat_id)
+        if not items or not cat_info: return
             
-        item = items[item_index]
-        cart_count = get_cart_db(user_id).get(item['id'], {}).get('count', 0)
         is_info = cat_id in ['mon', 'tue', 'wed', 'thu', 'fri']
         
-        caption = f"🖼 <b>{item['name']}</b>\n\n📝 <i>{item['description']}</i>\n\n💰 <b>Цена:</b> {item['price']:,} сум\n".replace(",", " ")
-        if is_info: caption = f"ℹ️ <b>ИНФОРМАЦИЯ О МЕНЮ</b>\n\n🖼 <b>{item['name']}</b>\n\n📝 <i>{item['description']}</i>"
-        if cart_count > 0 and not is_info: caption += f"🛒 <b>В вашем заказе:</b> {cart_count} шт.\n"
+        caption = f"📋 <b>{cat_info['name']}</b>\n\n"
+        for item in items:
+            price_str = f" — {item['price']:,} сум".replace(",", " ") if item['price'] > 0 else ""
+            caption += f"▪️ <b>{item['name']}</b>{price_str}\n<i>{item['description']}</i>\n\n"
 
-        await edit_media_message(user_id, last_msg_id, item['image'], caption, get_item_pagination_keyboard(cat_id, item_index, item['id'], len(items), cart_count, is_info), context)
+        await edit_media_message(user_id, last_msg_id, cat_info['banner'], caption, get_category_list_keyboard(user_id, cat_id, items, is_info), context)
 
-    elif data.startswith("add_item_"):
+    # ДОБАВЛЕНИЕ/УДАЛЕНИЕ ИЗ СПИСКА
+    elif data.startswith("list_add_"):
         parts = data.split("_")
-        cat_id, item_index, item_id = parts[2], int(parts[3]), parts[4]
-        items = get_items_by_cat(cat_id)
-        item = items[item_index]
-        new_count = get_cart_db(user_id).get(item_id, {}).get('count', 0) + 1
+        item_id = parts[-1]
+        cat_id = "_".join(parts[2:-1])
         
-        update_cart_db(user_id, item_id, item['name'], item['price'], new_count)
-        await query.answer(f"Добавлено")
-        caption = f"🖼 <b>{item['name']}</b>\n\n📝 <i>{item['description']}</i>\n\n💰 <b>Цена:</b> {item['price']:,} сум\n🛒 <b>В корзине:</b> {new_count} шт.\n".replace(",", " ")
-        await edit_media_message(user_id, last_msg_id, item['image'], caption, get_item_pagination_keyboard(cat_id, item_index, item['id'], len(items), new_count), context)
-
-    elif data.startswith("remove_item_"):
-        parts = data.split("_")
-        cat_id, item_index, item_id = parts[2], int(parts[3]), parts[4]
         items = get_items_by_cat(cat_id)
-        item = items[item_index]
+        item = next((i for i in items if i['id'] == item_id), None)
+        if not item: return
+        
+        new_count = get_cart_db(user_id).get(item_id, {}).get('count', 0) + 1
+        update_cart_db(user_id, item_id, item['name'], item['price'], new_count)
+        await query.answer(f"Добавлено: {item['name']}")
+        
+        # Обновляем клавиатуру списка
+        cat_info = get_category_info(cat_id)
+        caption = f"📋 <b>{cat_info['name']}</b>\n\n"
+        for it in items:
+            price_str = f" — {it['price']:,} сум".replace(",", " ") if it['price'] > 0 else ""
+            caption += f"▪️ <b>{it['name']}</b>{price_str}\n<i>{it['description']}</i>\n\n"
+            
+        await edit_media_message(user_id, last_msg_id, cat_info['banner'], caption, get_category_list_keyboard(user_id, cat_id, items, False), context)
+
+    elif data.startswith("list_rm_"):
+        parts = data.split("_")
+        item_id = parts[-1]
+        cat_id = "_".join(parts[2:-1])
+        
+        items = get_items_by_cat(cat_id)
+        item = next((i for i in items if i['id'] == item_id), None)
+        if not item: return
+        
         current_count = get_cart_db(user_id).get(item_id, {}).get('count', 0)
         
         if current_count > 0:
             new_count = current_count - 1
             update_cart_db(user_id, item_id, item['name'], item['price'], new_count)
             await query.answer("Удалено")
-            caption = f"🖼 <b>{item['name']}</b>\n\n📝 <i>{item['description']}</i>\n\n💰 <b>Цена:</b> {item['price']:,} сум\n".replace(",", " ")
-            if new_count > 0: caption += f"🛒 <b>В корзине:</b> {new_count} шт.\n"
-            await edit_media_message(user_id, last_msg_id, item['image'], caption, get_item_pagination_keyboard(cat_id, item_index, item['id'], len(items), new_count), context)
+            
+            # Обновляем клавиатуру списка
+            cat_info = get_category_info(cat_id)
+            caption = f"📋 <b>{cat_info['name']}</b>\n\n"
+            for it in items:
+                price_str = f" — {it['price']:,} сум".replace(",", " ") if it['price'] > 0 else ""
+                caption += f"▪️ <b>{it['name']}</b>{price_str}\n<i>{it['description']}</i>\n\n"
+                
+            await edit_media_message(user_id, last_msg_id, cat_info['banner'], caption, get_category_list_keyboard(user_id, cat_id, items, False), context)
         else:
             await query.answer("Этого нет в корзине")
 
