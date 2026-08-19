@@ -90,11 +90,11 @@ DEFAULT_ITEMS = [
     ('subs', 'Подписка: 4 недели', 'Комплексные обеды на целый месяц (20 дней). Выгода 10%!', 1260000, ''),
 
     # ИНФО МЕНЮ ПО ДНЯМ
-    ('mon', 'Меню Понедельника', 'Горячее: Курица/Мясо. Гарнир: Рис/Гречка. + Салат и Компот', 0, ''),
-    ('tue', 'Меню Вторника', 'Горячее: Курица/Мясо. Гарнир: Пюре/Макароны. + Салат и Компот', 0, ''),
-    ('wed', 'Меню Среды', 'Горячее: Курица/Мясо. Гарнир: Рис/Гречка. + Салат и Компот', 0, ''),
-    ('thu', 'Меню Четверга', 'Горячее: Курица/Мясо. Гарнир: Пюре/Макароны. + Салат и Компот', 0, ''),
-    ('fri', 'Меню Пятницы', 'Плов Ташкентский + Салат Ачик-Чучук + Компот', 0, '')
+    ('mon', 'Меню Понедельника', 'Горячее: Курица/Мясо. Гарнир: Рис/Гречка. + Салат и Компот', 0, MAIN_BANNER),
+    ('tue', 'Меню Вторника', 'Горячее: Курица/Мясо. Гарнир: Пюре/Макароны. + Салат и Компот', 0, MAIN_BANNER),
+    ('wed', 'Меню Среды', 'Горячее: Курица/Мясо. Гарнир: Рис/Гречка. + Салат и Компот', 0, MAIN_BANNER),
+    ('thu', 'Меню Четверга', 'Горячее: Курица/Мясо. Гарнир: Пюре/Макароны. + Салат и Компот', 0, MAIN_BANNER),
+    ('fri', 'Меню Пятницы', 'Плов Ташкентский + Салат Ачик-Чучук + Компот', 0, MAIN_BANNER)
 ]
 
 # ==================== РАБОТА С БД ====================
@@ -224,16 +224,19 @@ def get_category_list_keyboard(user_id, cat_id, items, is_info=False):
         for item in items:
             item_id = item['id']
             count = cart.get(item_id, {}).get('count', 0)
-            price_formatted = f"{item['price']:,}".replace(",", " ")
             
-            if count == 0:
-                keyboard.append([InlineKeyboardButton(f"➕ {item['name']} — {price_formatted} сум", callback_data=f"list_add_{cat_id}_{item_id}")])
-            else:
-                keyboard.append([
-                    InlineKeyboardButton("➖", callback_data=f"list_rm_{cat_id}_{item_id}"),
-                    InlineKeyboardButton(f"{item['name']} (В корзине: {count})", callback_data="ignore"),
-                    InlineKeyboardButton("➕", callback_data=f"list_add_{cat_id}_{item_id}")
-                ])
+            # Укорачиваем длинные названия, чтобы цифра "шт" всегда влезала в кнопку
+            display_name = item['name']
+            if len(display_name) > 16:
+                display_name = display_name[:14] + ".."
+                
+            middle_text = f"{display_name} : {count} шт"
+            
+            keyboard.append([
+                InlineKeyboardButton("➖", callback_data=f"list_rm_{cat_id}_{item_id}"),
+                InlineKeyboardButton(middle_text, callback_data="ignore"),
+                InlineKeyboardButton("➕", callback_data=f"list_add_{cat_id}_{item_id}")
+            ])
 
     back_data = "home"
     if cat_id in ['hot_drinks', 'cold_drinks', 'fresh_drinks']: back_data = "nav_drinks"
@@ -342,7 +345,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("✅ Обед собран и добавлен в корзину!", show_alert=True)
         await edit_media_message(user_id, last_msg_id, MAIN_BANNER, "🏠 <b>Главное меню 👇</b>", get_main_keyboard(), context)
 
-    # ПРОСМОТР КАТЕГОРИЙ (ЕДИНЫМ СПИСКОМ)
+    # ПРОСМОТР КАТЕГОРИЙ (ЕДИНЫМ СПИСКОМ СРАЗУ СО СЧЕТЧИКАМИ)
     elif data.startswith("cat_"):
         await query.answer()
         cat_id = data[4:] # Убираем "cat_"
@@ -374,14 +377,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         update_cart_db(user_id, item_id, item['name'], item['price'], new_count)
         await query.answer(f"Добавлено: {item['name']}")
         
-        # Обновляем клавиатуру списка
-        cat_info = get_category_info(cat_id)
-        caption = f"📋 <b>{cat_info['name']}</b>\n\n"
-        for it in items:
-            price_str = f" — {it['price']:,} сум".replace(",", " ") if it['price'] > 0 else ""
-            caption += f"▪️ <b>{it['name']}</b>{price_str}\n<i>{it['description']}</i>\n\n"
-            
-        await edit_media_message(user_id, last_msg_id, cat_info['banner'], caption, get_category_list_keyboard(user_id, cat_id, items, False), context)
+        # Обновляем только клавиатуру, чтобы не было мерцания текста
+        await context.bot.edit_message_reply_markup(chat_id=user_id, message_id=last_msg_id, reply_markup=get_category_list_keyboard(user_id, cat_id, items, False))
 
     elif data.startswith("list_rm_"):
         parts = data.split("_")
@@ -399,14 +396,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             update_cart_db(user_id, item_id, item['name'], item['price'], new_count)
             await query.answer("Удалено")
             
-            # Обновляем клавиатуру списка
-            cat_info = get_category_info(cat_id)
-            caption = f"📋 <b>{cat_info['name']}</b>\n\n"
-            for it in items:
-                price_str = f" — {it['price']:,} сум".replace(",", " ") if it['price'] > 0 else ""
-                caption += f"▪️ <b>{it['name']}</b>{price_str}\n<i>{it['description']}</i>\n\n"
-                
-            await edit_media_message(user_id, last_msg_id, cat_info['banner'], caption, get_category_list_keyboard(user_id, cat_id, items, False), context)
+            # Обновляем только клавиатуру
+            await context.bot.edit_message_reply_markup(chat_id=user_id, message_id=last_msg_id, reply_markup=get_category_list_keyboard(user_id, cat_id, items, False))
         else:
             await query.answer("Этого нет в корзине")
 
