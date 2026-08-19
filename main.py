@@ -8,7 +8,8 @@ from telegram import (
     ReplyKeyboardMarkup,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    BotCommand
+    BotCommand,
+    InputMediaPhoto
 )
 from telegram.ext import (
     Application,
@@ -19,7 +20,7 @@ from telegram.ext import (
     ContextTypes
 )
 
-# Логирование
+# Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -28,7 +29,7 @@ logging.basicConfig(
 # Конфигурация
 TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 ADMIN_ID = os.getenv("ADMIN_ID", "YOUR_TELEGRAM_ID_HERE")
-CHANNEL_ID = os.getenv("CHANNEL_ID", "@your_channel_username") # Юзернейм канала (напр. @my_channel) или ID (-100...)
+CHANNEL_ID = os.getenv("CHANNEL_ID", "@your_channel_username") # Юзернейм или ID канала
 
 CLICK_PASS_ID = "052528"
 QR_FILE_NAME = "qr.jpg"
@@ -39,51 +40,156 @@ users_db = {}
 active_orders = {}
 menu_active = True
 
-# Меню на неделю
+# Меню на неделю с фото и описанием блюд
 WEEKLY_MENU = {
     "mon": {
         "name": "Понедельник",
+        "banner": "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800",
         "items": {
-            "mon_1": {"name": "Курица гриль + рис + салат", "price": 63000},
-            "mon_2": {"name": "Мясо + картофель + компот", "price": 75000},
-            "mon_3": {"name": "Сэндвич курица-сыр", "price": 25000},
-            "mon_4": {"name": "Свежевыжатый сок (апельсин)", "price": 18000}
+            "mon_1": {
+                "name": "Курица гриль + рис + салат",
+                "price": 63000,
+                "desc": "Сочное филе курицы на гриле, рассыпчатый басмати и свежий овощной салат.",
+                "image": "https://images.unsplash.com/photo-1598515214211-89d3c73ae83b?w=800"
+            },
+            "mon_2": {
+                "name": "Мясо + картофель + компот",
+                "price": 75000,
+                "desc": "Нежная тушеная говядина с запеченным картофелем по-домашнему.",
+                "image": "https://images.unsplash.com/photo-1544025162-d76694265947?w=800"
+            },
+            "mon_3": {
+                "name": "Сэндвич курица-сыр",
+                "price": 25000,
+                "desc": "Хрустящий тост с филе курицы, сыром Чеддер и фирменным соусом.",
+                "image": "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?w=800"
+            },
+            "mon_4": {
+                "name": "Свежевыжатый апельсиновый сок",
+                "price": 18000,
+                "desc": "100% натуральный свежевыжатый сок из спелых апельсинов.",
+                "image": "https://images.unsplash.com/photo-1613478223719-2ab802602423?w=800"
+            }
         }
     },
     "tue": {
         "name": "Вторник",
+        "banner": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=800",
         "items": {
-            "tue_1": {"name": "Плов чайханский + салат Ачик-чучук", "price": 65000},
-            "tue_2": {"name": "Бефстроганов + пюре + морс", "price": 72000},
-            "tue_3": {"name": "Клаб-сэндвич с индейкой", "price": 28000},
-            "tue_4": {"name": "Компот из сухофруктов", "price": 12000}
+            "tue_1": {
+                "name": "Плов чайханский + Ачик-чучук",
+                "price": 65000,
+                "desc": "Традиционный узбекский плов с говядиной и салатом из спелых томатов.",
+                "image": "https://images.unsplash.com/photo-1633964913295-ceb43826e7c9?w=800"
+            },
+            "tue_2": {
+                "name": "Бефстроганов + пюре + морс",
+                "price": 72000,
+                "desc": "Классический бефстроганов из говядины со сливочным пюре.",
+                "image": "https://images.unsplash.com/photo-1588168333986-5078d3ae3976?w=800"
+            },
+            "tue_3": {
+                "name": "Клаб-сэндвич с индейкой",
+                "price": 28000,
+                "desc": "Трехслойный сэндвич с индейкой, беконом, томатами и салатом.",
+                "image": "https://images.unsplash.com/photo-1567234669003-dce7a7a88821?w=800"
+            },
+            "tue_4": {
+                "name": "Компот из сухофруктов",
+                "price": 12000,
+                "desc": "Домашний освежающий компот из кураги, изюма и чернослива.",
+                "image": "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=800"
+            }
         }
     },
     "wed": {
         "name": "Среда",
+        "banner": "https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=800",
         "items": {
-            "wed_1": {"name": "Стейк из лосося + овощи гриль", "price": 85000},
-            "wed_2": {"name": "Паста Карбонара + салат", "price": 68000},
-            "wed_3": {"name": "Цезарь с креветками", "price": 35000},
-            "wed_4": {"name": "Лимонад домашний", "price": 15000}
+            "wed_1": {
+                "name": "Стейк из лосося + овощи гриль",
+                "price": 85000,
+                "desc": "Стейк лосося на гриле со свежими кабачками, перцем и баклажанами.",
+                "image": "https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?w=800"
+            },
+            "wed_2": {
+                "name": "Паста Карбонара + салат",
+                "price": 68000,
+                "desc": "Итальянская спагетти с беконом, пармезаном и сливочным соусом.",
+                "image": "https://images.unsplash.com/photo-1612874742237-6526221588e3?w=800"
+            },
+            "wed_3": {
+                "name": "Цезарь с креветками",
+                "price": 35000,
+                "desc": "Салат Романо, тигровые креветки, пармезан и соус Цезарь.",
+                "image": "https://images.unsplash.com/photo-1550304943-4f24f54ddde9?w=800"
+            },
+            "wed_4": {
+                "name": "Лимонад домашний",
+                "price": 15000,
+                "desc": "Натуральный освежающий лимонад с мятой и лимоном.",
+                "image": "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=800"
+            }
         }
     },
     "thu": {
         "name": "Четверг",
+        "banner": "https://images.unsplash.com/photo-1543353071-10c8ba85a904?w=800",
         "items": {
-            "thu_1": {"name": "Шницель куриный + картофель фри", "price": 60000},
-            "thu_2": {"name": "Гуляш из говядины + гречка", "price": 70000},
-            "thu_3": {"name": "Ролл с курицей и овощами", "price": 27000},
-            "thu_4": {"name": "Морс ягодный", "price": 14000}
+            "thu_1": {
+                "name": "Шницель куриный + картофель фри",
+                "price": 60000,
+                "desc": "Хрустящий куриный шницель в панировке с золотистой картошкой фри.",
+                "image": "https://images.unsplash.com/photo-1532550907401-a500c9a57435?w=800"
+            },
+            "thu_2": {
+                "name": "Гуляш из говядины + гречка",
+                "price": 70000,
+                "desc": "Ароматный гуляш в густом соусе с рассыпчатой гречкой.",
+                "image": "https://images.unsplash.com/photo-1544025162-d76694265947?w=800"
+            },
+            "thu_3": {
+                "name": "Ролл с курицей и овощами",
+                "price": 27000,
+                "desc": "Сочная курица, свежие огурцы, томаты и соус в тортилье.",
+                "image": "https://images.unsplash.com/photo-1626700051175-6818013e1d4f?w=800"
+            },
+            "thu_4": {
+                "name": "Морс ягодный",
+                "price": 14000,
+                "desc": "Натуральный морс из спелых лесных ягод.",
+                "image": "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=800"
+            }
         }
     },
     "fri": {
         "name": "Пятница",
+        "banner": "https://images.unsplash.com/photo-1466978913421-dad2ebd01d17?w=800",
         "items": {
-            "fri_1": {"name": "Бургер сет + фри + напиток", "price": 75000},
-            "fri_2": {"name": "Казан-кабоб из баранины", "price": 80000},
-            "fri_3": {"name": "Салат Греческий", "price": 26000},
-            "fri_4": {"name": "Свежевыжатый яблочный сок", "price": 18000}
+            "fri_1": {
+                "name": "Бургер сет + фри + напиток",
+                "price": 75000,
+                "desc": "Сочный бургер из говядины, картофель фри и прохладительный напиток.",
+                "image": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800"
+            },
+            "fri_2": {
+                "name": "Казан-кабоб из баранины",
+                "price": 80000,
+                "desc": "Нежная баранина с обжаренным румяным картофелем и луком.",
+                "image": "https://images.unsplash.com/photo-1544025162-d76694265947?w=800"
+            },
+            "fri_3": {
+                "name": "Салат Греческий",
+                "price": 26000,
+                "desc": "Свежие овощи, сыр Фета, маслины и оливковое масло.",
+                "image": "https://images.unsplash.com/photo-1540420773420-3366772f4999?w=800"
+            },
+            "fri_4": {
+                "name": "Свежевыжатый яблочный сок",
+                "price": 18000,
+                "desc": "100% свежевыжатый сок из зеленых яблок.",
+                "image": "https://images.unsplash.com/photo-1613478223719-2ab802602423?w=800"
+            }
         }
     }
 }
@@ -128,6 +234,54 @@ def get_order_summary(items_list):
     items_str = ", ".join(short_lines)
     return items_text, items_str
 
+async def send_photo_message(chat_id, photo_source, caption, reply_markup, context):
+    """Вспомогательная функция для отправки фото (URL или локальный файл)"""
+    if photo_source and (photo_source.startswith("http://") or photo_source.startswith("https://")):
+        return await context.bot.send_photo(
+            chat_id=chat_id,
+            photo=photo_source,
+            caption=caption,
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
+    elif photo_source and os.path.exists(photo_source):
+        with open(photo_source, "rb") as photo:
+            return await context.bot.send_photo(
+                chat_id=chat_id,
+                photo=photo,
+                caption=caption,
+                reply_markup=reply_markup,
+                parse_mode='HTML'
+            )
+    else:
+        return await context.bot.send_message(
+            chat_id=chat_id,
+            text=caption,
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
+
+async def update_photo_or_text(query, photo_source, caption, reply_markup, context):
+    """Обновляет текущее сообщение картинкой и текстом"""
+    try:
+        if photo_source and (photo_source.startswith("http://") or photo_source.startswith("https://")):
+            media = InputMediaPhoto(media=photo_source, caption=caption, parse_mode='HTML')
+            await query.message.edit_media(media=media, reply_markup=reply_markup)
+            return
+        elif photo_source and os.path.exists(photo_source):
+            with open(photo_source, "rb") as photo:
+                media = InputMediaPhoto(media=photo, caption=caption, parse_mode='HTML')
+                await query.message.edit_media(media=media, reply_markup=reply_markup)
+                return
+    except Exception:
+        pass
+
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+    await send_photo_message(query.from_user.id, photo_source, caption, reply_markup, context)
+
 async def render_day_menu(query, day_code, user_id):
     order = active_orders[user_id]
     order['day'] = day_code
@@ -137,7 +291,7 @@ async def render_day_menu(query, day_code, user_id):
 
     text = f"<b>🍽 Меню на {day_info['name']}</b>\n\n"
     for idx, (item_id, item) in enumerate(day_info['items'].items(), 1):
-        text += f"{idx}️⃣ {item['name']} — {item['price']:,} сум\n".replace(",", " ")
+        text += f"{idx}️⃣ <b>{item['name']}</b>\n💰 {item['price']:,} сум\n".replace(",", " ")
 
     text += "\n⏰ Приём заказов до 11:00\n📍 Выдача: 4 этаж, 12:30–14:00\n"
 
@@ -146,14 +300,11 @@ async def render_day_menu(query, day_code, user_id):
         text += f"\n🛒 <b>Ваш выбор:</b>\n{items_text}\n\n💰 <b>Итого:</b> {order['total']:,} сум".replace(",", " ")
 
     keyboard = []
-    row = []
     for idx, (item_id, item) in enumerate(day_info['items'].items(), 1):
-        row.append(InlineKeyboardButton(f"+ Заказать №{idx}", callback_data=f"add_{item_id}"))
-        if len(row) == 2:
-            keyboard.append(row)
-            row = []
-    if row:
-        keyboard.append(row)
+        keyboard.append([
+            InlineKeyboardButton(f"🖼 №{idx} Фото и описание", callback_data=f"view_{item_id}"),
+            InlineKeyboardButton(f"➕ Заказать №{idx}", callback_data=f"add_{item_id}")
+        ])
 
     if order['items']:
         total_count = len(order['items'])
@@ -161,7 +312,35 @@ async def render_day_menu(query, day_code, user_id):
 
     keyboard.append([InlineKeyboardButton("⬅️ Назад к дням", callback_data="days_list")])
 
-    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    banner = day_info.get("banner")
+    await update_photo_or_text(query, banner, text, InlineKeyboardMarkup(keyboard), context)
+
+async def render_item_card(query, item_id, user_id):
+    """Показ отдельного блюда с его фото и описанием"""
+    item = get_item_by_id(item_id)
+    if not item:
+        return
+
+    order = active_orders[user_id]
+    cnt = sum(1 for i in order['items'] if i['name'] == item['name'])
+
+    caption = (
+        f"🖼 <b>{item['name']}</b>\n\n"
+        f"<i>{item['desc']}</i>\n\n"
+        f"💰 <b>Цена:</b> {item['price']:,} сум\n".replace(",", " ")
+    )
+    if cnt > 0:
+        caption += f"🛒 <b>В вашем заказе:</b> {cnt} шт.\n"
+
+    keyboard = [
+        [
+            InlineKeyboardButton("➕ Добавить", callback_data=f"add_{item_id}"),
+            InlineKeyboardButton("➖ Удалить", callback_data=f"remove_{item_id}")
+        ],
+        [InlineKeyboardButton("⬅️ Назад к меню дня", callback_data=f"day_{order.get('day', 'mon')}")]
+    ]
+
+    await update_photo_or_text(query, item['image'], caption, InlineKeyboardMarkup(keyboard), context)
 
 async def post_init(application: Application):
     commands = [
@@ -250,12 +429,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "days_list":
         await query.answer()
-        await query.message.edit_text("<b>📅 Выберите день недели:</b>", reply_markup=get_days_keyboard(), parse_mode='HTML')
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="<b>📅 Выберите день недели:</b>",
+            reply_markup=get_days_keyboard(),
+            parse_mode='HTML'
+        )
 
     elif data.startswith("day_"):
         await query.answer()
         day_code = data.split("_")[1]
         await render_day_menu(query, day_code, user_id)
+
+    elif data.startswith("view_"):
+        await query.answer()
+        item_id = data.split("view_")[1]
+        await render_item_card(query, item_id, user_id)
 
     elif data.startswith("add_"):
         item_id = data.split("add_")[1]
@@ -267,7 +460,25 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cnt = sum(1 for i in order['items'] if i['name'] == item['name'])
             await query.answer(f"Добавлено: {item['name']} (x{cnt})")
             
-            await render_day_menu(query, order.get('day', 'mon'), user_id)
+            # Обновляем либо карточку блюда, либо общее меню дня
+            if query.message.caption and "Итого" not in query.message.caption and item['name'] in query.message.caption:
+                await render_item_card(query, item_id, user_id)
+            else:
+                await render_day_menu(query, order.get('day', 'mon'), user_id)
+
+    elif data.startswith("remove_"):
+        item_id = data.split("remove_")[1]
+        item = get_item_by_id(item_id)
+        if item:
+            for idx, i in enumerate(order['items']):
+                if i['name'] == item['name']:
+                    order['items'].pop(idx)
+                    order['total'] -= item['price']
+                    await query.answer(f"Удалено: {item['name']}")
+                    break
+            else:
+                await query.answer("Этого блюда нет в корзине")
+            await render_item_card(query, item_id, user_id)
 
     elif data == "checkout":
         await query.answer()
@@ -282,7 +493,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("➕ Добавить ещё", callback_data=f"day_{order.get('day', 'mon')}")],
             [InlineKeyboardButton("❌ Отмена заказа", callback_data="cancel")]
         ]
-        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+        await context.bot.send_message(chat_id=user_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
     elif data == "cancel":
         await query.answer()
@@ -291,7 +506,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "confirm":
         await query.answer()
-        
         amount = order['total']
         ussd_code = f"*880*{CLICK_PASS_ID}*{amount}#"
         click_url = f"https://my.click.uz/clickpass/{CLICK_PASS_ID}?amount={amount}"
@@ -317,22 +531,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-        if os.path.exists(QR_FILE_NAME):
-            with open(QR_FILE_NAME, "rb") as photo:
-                await context.bot.send_photo(
-                    chat_id=user_id,
-                    photo=photo,
-                    caption=caption,
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode='HTML'
-                )
-        else:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=caption,
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode='HTML'
-            )
+        await send_photo_message(user_id, QR_FILE_NAME, caption, InlineKeyboardMarkup(keyboard), context)
 
     elif data == "paid":
         await query.answer()
@@ -374,46 +573,48 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         active_orders.pop(user_id, None)
 
 async def post_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Публикация анонса меню в канал (только для админа)"""
+    """Публикация красивого анонса меню с картинкой в канал"""
     user_id = update.effective_user.id
     if str(user_id) != str(ADMIN_ID):
         await update.message.reply_text("У вас нет прав для выполнения этой команды.")
         return
 
+    # Определяем текущий день недели по дате (пн = mon, вт = tue и т.д.)
+    days_map = {0: "mon", 1: "tue", 2: "wed", 3: "thu", 4: "fri"}
+    current_day = days_map.get(datetime.now().weekday(), "mon")
+    
+    # Если передан аргумент (например /post tue), используем его
+    if context.args:
+        arg_day = context.args[0].lower()
+        if arg_day in WEEKLY_MENU:
+            current_day = arg_day
+
+    day_info = WEEKLY_MENU[current_day]
     bot_info = await context.bot.get_me()
     bot_username = bot_info.username
 
-    caption = (
-        "<b>🍽 Анонс обедов на сегодня!</b>\n\n"
-        "Свежее меню уже доступно в нашем боте.\n"
-        "Успейте оформить и оплатить заказ до 11:00!\n\n"
-        f"👉 <b>Заказать обед:</b> @{bot_username}"
+    caption = f"<b>🍽 АНОНС ОБЕДОВ: {day_info['name'].upper()}!</b>\n\n"
+    for idx, (item_id, item) in enumerate(day_info['items'].items(), 1):
+        caption += f"{idx}️⃣ <b>{item['name']}</b> — {item['price']:,} сум\n<i>{item['desc']}</i>\n\n".replace(",", " ")
+
+    caption += (
+        "⏰ <b>Приём заказов до 11:00</b>\n"
+        "📍 <b>Выдача:</b> 4 этаж (12:30–14:00)\n\n"
+        "👇 <i>Нажмите кнопку ниже, чтобы оформить заказ:</i>"
     )
 
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🥗 Сделать заказ", url=f"https://t.me/{bot_username}")]
+        [InlineKeyboardButton("🥗 Сделать заказ в боте", url=f"https://t.me/{bot_username}")]
     ])
 
+    # Испольуем баннер дня или локальный post.jpg
+    photo_to_send = POST_FILE_NAME if os.path.exists(POST_FILE_NAME) else day_info['banner']
+
     try:
-        if os.path.exists(POST_FILE_NAME):
-            with open(POST_FILE_NAME, "rb") as photo:
-                await context.bot.send_photo(
-                    chat_id=CHANNEL_ID,
-                    photo=photo,
-                    caption=caption,
-                    reply_markup=keyboard,
-                    parse_mode='HTML'
-                )
-        else:
-            await context.bot.send_message(
-                chat_id=CHANNEL_ID,
-                text=caption,
-                reply_markup=keyboard,
-                parse_mode='HTML'
-            )
-        await update.message.reply_text("✅ Пост с картинкой успешно опубликован в канале!")
+        await send_photo_message(CHANNEL_ID, photo_to_send, caption, keyboard, context)
+        await update.message.reply_text(f"✅ Пост с картинкой на <b>{day_info['name']}</b> успешно опубликован в канале!", parse_mode='HTML')
     except Exception as e:
-        await update.message.reply_text(f"❌ Ошибка публикации: {e}\n\nПроверьте, добавлен ли бот в администраторы канала.")
+        await update.message.reply_text(f"❌ Ошибка публикации: {e}\n\nУбедитесь, что бот добавлен администратором в {CHANNEL_ID}.")
 
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
