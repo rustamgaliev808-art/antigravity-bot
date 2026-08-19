@@ -44,7 +44,8 @@ try:
 except (ValueError, TypeError):
     ADMIN_ID = None
 
-DB_NAME = 'delivery_bot_v3.db'
+# Сменили имя БД для чистой загрузки нового меню
+DB_NAME = 'delivery_bot_v5.db'
 menu_active = True
 
 # ==================== ДАННЫЕ МЕНЮ ПО УМОЛЧАНИЮ ====================
@@ -60,24 +61,35 @@ DEFAULT_CATEGORIES = [
 ]
 
 DEFAULT_ITEMS = [
-    ('breakfasts', 'Овсяная каша с ягодами', 'На молоке с добавлением свежих ягод и меда.', 20000, 'https://picsum.photos/400/300?random=201'),
-    ('breakfasts', 'Сырники со сметаной', 'Домашние творожные сырники.', 25000, 'https://picsum.photos/400/300?random=202'),
-    ('breakfasts', 'Блинчики с творогом', 'Тонкие блинчики с нежной творожной начинкой.', 22000, 'https://picsum.photos/400/300?random=203'),
+    # ЗАВТРАКИ (Новые цены и позиции)
+    ('breakfasts', 'Яичница с сосисками', 'Классический сытный завтрак из яиц и сосисок.', 40000, 'https://picsum.photos/400/300?random=201'),
+    ('breakfasts', 'Омлет', 'Пышный свежеприготовленный омлет.', 35000, 'https://picsum.photos/400/300?random=202'),
+    ('breakfasts', 'Гренки 4 шт', 'Золотистые поджаренные гренки (4 штуки).', 20000, 'https://picsum.photos/400/300?random=203'),
+    ('breakfasts', 'Овсяная каша', 'Вкусная и полезная овсяная каша.', 25000, 'https://picsum.photos/400/300?random=204'),
+    ('breakfasts', 'Сендвич с говядиной и сыром', 'Сытный сендвич с говядиной и расплавленным сыром.', 32000, 'https://picsum.photos/400/300?random=205'),
     
-    ('hot_drinks', 'Американо / Капучино', 'Свежесваренный кофе (200 / 250 мл).', 20000, 'https://picsum.photos/400/300?random=301'),
-    ('hot_drinks', 'Авторский чай', 'Имбирь, лимон, мед.', 18000, 'https://picsum.photos/400/300?random=303'),
+    # ГОРЯЧИЕ НАПИТКИ (Новые цены и позиции)
+    ('hot_drinks', 'Американо', 'Классический черный кофе.', 18000, 'https://picsum.photos/400/300?random=301'),
+    ('hot_drinks', 'Капучино', 'Кофе с пышной молочной пеной.', 20000, 'https://picsum.photos/400/300?random=302'),
+    ('hot_drinks', 'Латте', 'Мягкий кофейный напиток с большим количеством молока.', 22000, 'https://picsum.photos/400/300?random=303'),
+    ('hot_drinks', 'Флэт Уайт', 'Насыщенный кофе с бархатистой молочной пеной.', 30000, 'https://picsum.photos/400/300?random=304'),
     
-    ('cold_drinks', 'Домашний лимонад Цитрус-Мята', 'Освежающий лимонад (400 мл).', 25000, 'https://picsum.photos/400/300?random=304'),
-    ('cold_drinks', 'Айс-Латте', 'Холодный кофе (350 мл).', 25000, 'https://picsum.photos/400/300?random=305'),
+    # ХОЛОДНЫЕ НАПИТКИ (Новые цены и позиции)
+    ('cold_drinks', 'Кола 0.25 / Кола (Zero)', 'Освежающая газировка.', 13000, 'https://picsum.photos/400/300?random=311'),
+    ('cold_drinks', 'Fanta 0.25', 'Апельсиновая газировка.', 12000, 'https://picsum.photos/400/300?random=312'),
+    ('cold_drinks', 'Мохито (Клас. / Клубничный)', 'Охлаждающий напиток.', 20000, 'https://picsum.photos/400/300?random=313'),
+    ('cold_drinks', 'Chortoq 0.25 (с газом)', 'Минеральная газированная вода.', 12000, 'https://picsum.photos/400/300?random=314'),
     
-    ('fresh_drinks', 'Яблочный фреш', 'Свежевыжатый сок из зеленых яблок (250 мл).', 30000, 'https://picsum.photos/400/300?random=306'),
-    ('fresh_drinks', 'Фреш Морковь-Яблоко', 'Витаминный заряд (250 мл).', 30000, 'https://picsum.photos/400/300?random=307'),
-    ('fresh_drinks', 'Фреш Детокс', 'Свекла, яблоко, морковь (250 мл).', 32000, 'https://picsum.photos/400/300?random=308'),
+    # ФРЕШИ
+    ('fresh_drinks', 'Яблочный фреш', 'Свежевыжатый сок из зеленых яблок (250 мл).', 30000, 'https://picsum.photos/400/300?random=321'),
+    ('fresh_drinks', 'Фреш Морковь-Яблоко', 'Витаминный заряд (250 мл).', 30000, 'https://picsum.photos/400/300?random=322'),
+    ('fresh_drinks', 'Фреш Детокс', 'Свекла, яблоко, морковь (250 мл).', 32000, 'https://picsum.photos/400/300?random=323'),
 
+    # ПОДПИСКИ
     ('subs', 'Подписка: 1 неделя', 'Комплексные обеды на 5 рабочих дней.', 350000, SUBS_BANNER),
     ('subs', 'Подписка: 4 недели', 'Комплексные обеды на целый месяц (20 дней). Выгода 10%!', 1260000, SUBS_BANNER),
 
-    # Информационное меню для просмотра
+    # ИНФО МЕНЮ ПО ДНЯМ
     ('mon', 'Меню Понедельника', 'Горячее: Курица/Мясо. Гарнир: Рис/Гречка. + Салат и Компот', 0, MAIN_BANNER),
     ('tue', 'Меню Вторника', 'Горячее: Курица/Мясо. Гарнир: Пюре/Макароны. + Салат и Компот', 0, MAIN_BANNER),
     ('wed', 'Меню Среды', 'Горячее: Курица/Мясо. Гарнир: Рис/Гречка. + Салат и Компот', 0, MAIN_BANNER),
@@ -199,7 +211,6 @@ def get_week_menu_keyboard():
 def get_item_pagination_keyboard(cat_id, item_index, item_id, total_items, cart_count=0, is_info=False):
     keyboard = []
     
-    # Если это не информационное меню недели, показываем кнопку добавить
     if not is_info:
         add_text = f"➕ Добавить ({cart_count})" if cart_count > 0 else "➕ Добавить"
         keyboard.append([
@@ -382,7 +393,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _, total, _ = get_order_summary(user_id)
         click_url = f"https://my.click.uz/clickpass/{CLICK_PASS_ID}?amount={total}"
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("💳 Оплатить", url=click_url)], [InlineKeyboardButton("✅ Я оплатил(а)", callback_data="paid_order")]])
-        caption = f"💳 <b>Счёт на {total:,} сум!</b>\n\nОтсканируйте <b>QR-код</b> или нажмите кнопку.".replace(",", " ")
+        
+        formatted_total = f"{total:,}".replace(",", " ")
+        caption = f"💳 <b>Счёт на {formatted_total} сум!</b>\n\nОтсканируйте <b>QR-код</b> или нажмите кнопку."
         
         try: await context.bot.delete_message(chat_id=user_id, message_id=last_msg_id)
         except: pass
@@ -392,22 +405,34 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg = await context.bot.send_message(chat_id=user_id, text=caption, reply_markup=kb, parse_mode='HTML')
         context.user_data['last_msg_id'] = msg.message_id
 
+    # ФИНАЛЬНЫЙ ШАГ И ОТПРАВКА АДМИНУ
     elif data == "paid_order":
         await query.answer()
         items_text, total, items_str = get_order_summary(user_id)
         if not items_text: return
         clear_cart_db(user_id)
         
-        # Симуляция сохранения заказа
+        customer_name = query.from_user.first_name
+        if query.from_user.last_name:
+            customer_name += f" {query.from_user.last_name}"
+        username = f" (@{query.from_user.username})" if query.from_user.username else ""
+        
         text = f"✅ <b>Оплачено!</b>\n\n<b>Состав:</b>\n{items_text}\n\nВыдача: 4 этаж.\nСпасибо за заказ!"
         try: await context.bot.delete_message(chat_id=user_id, message_id=last_msg_id)
         except: pass
         await context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML')
         
-        # Уведомление админу
         if ADMIN_ID:
             user = get_user_db(user_id)
-            admin_text = f"🚨 <b>Новый заказ!</b>\n📞 Тел: {user[1]}\n💰 Сумма: {total:,} сум\n\n🍽 <b>Состав:</b>\n{items_text}".replace(",", " ")
+            formatted_total = f"{total:,}".replace(",", " ")
+            
+            admin_text = (
+                f"🚨 <b>Новый заказ!</b>\n"
+                f"👤 Имя: {customer_name}{username}\n"
+                f"📞 Тел: {user[1]}\n"
+                f"💰 Сумма: {formatted_total} сум\n\n"
+                f"🍽 <b>Состав:</b>\n{items_text}"
+            )
             try: await context.bot.send_message(chat_id=ADMIN_ID, text=admin_text, parse_mode='HTML')
             except: pass
 
