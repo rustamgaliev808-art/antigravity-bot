@@ -106,7 +106,7 @@ def get_order_summary(items_list):
     return items_text, items_str
 
 async def render_day_menu(query, day_code, user_id):
-    """Отображает меню конкретного дня и текущую корзину без перехода на другой экран"""
+    """Отображает меню конкретного дня и текущую корзину"""
     order = active_orders[user_id]
     order['day'] = day_code
     day_info = WEEKLY_MENU.get(day_code)
@@ -119,7 +119,6 @@ async def render_day_menu(query, day_code, user_id):
 
     text += "\n⏰ Приём заказов до 11:00\n📍 Выдача: 4 этаж, 12:30–14:00\n"
 
-    # Выводим текущую корзину прямо под меню дня
     if order['items']:
         items_text, _ = get_order_summary(order['items'])
         text += f"\n🛒 <b>Ваш выбор:</b>\n{items_text}\n\n💰 <b>Итого:</b> {order['total']:,} сум".replace(",", " ")
@@ -135,7 +134,8 @@ async def render_day_menu(query, day_code, user_id):
         keyboard.append(row)
 
     if order['items']:
-        keyboard.append([InlineKeyboardButton(f"🛒 Перейти к оформлению ({order['total']:,} сум)".replace(",", " "), callback_data="checkout")])
+        # Заметная контрастная кнопка оформления заказа
+        keyboard.append([InlineKeyboardButton(f"🛍 ОФОРМИТЬ ЗАКАЗ ({order['total']:,} сум) ➡️".replace(",", " "), callback_data="checkout")])
 
     keyboard.append([InlineKeyboardButton("⬅️ Назад к дням", callback_data="days_list")])
 
@@ -241,11 +241,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             order['items'].append(item)
             order['total'] += item['price']
             
-            # Подсчет добавленного товара для всплывающего уведомления
             cnt = sum(1 for i in order['items'] if i['name'] == item['name'])
             await query.answer(f"Добавлено: {item['name']} (x{cnt})")
             
-            # Обновляем это же сообщение с новым выбором
             await render_day_menu(query, order.get('day', 'mon'), user_id)
 
     elif data == "checkout":
@@ -259,7 +257,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [InlineKeyboardButton("✅ Подтвердить", callback_data="confirm")],
             [InlineKeyboardButton("➕ Добавить ещё", callback_data=f"day_{order.get('day', 'mon')}")],
-            [InlineKeyboardButton("❌ Отмена", callback_data="cancel")]
+            [InlineKeyboardButton("❌ Отмена заказа", callback_data="cancel")]
         ]
         await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
