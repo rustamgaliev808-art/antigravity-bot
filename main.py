@@ -33,9 +33,11 @@ CHANNEL_ID = os.getenv("CHANNEL_ID", "@your_channel")
 CLICK_PASS_ID = "052528"
 QR_FILE_NAME = "qr.jpg"
 
-MAIN_BANNER = "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=1200"
-CART_BANNER = "https://images.unsplash.com/photo-1581349485608-9469926a8e5e?w=1200"
-SUBS_BANNER = "https://images.unsplash.com/photo-1576867757603-05b1af5eb47b?w=1200"
+# Надежные ссылки на картинки
+MAIN_BANNER = "https://picsum.photos/1200/800?random=10"
+CART_BANNER = "https://picsum.photos/1200/800?random=11"
+LUNCH_BANNER = "https://picsum.photos/1200/800?random=12"
+SUBS_BANNER = "https://picsum.photos/1200/800?random=13"
 
 try:
     ADMIN_ID = int(ADMIN_ID_STR) if ADMIN_ID_STR.isdigit() else None
@@ -43,15 +45,15 @@ except (ValueError, TypeError):
     ADMIN_ID = None
 
 # Новая чистая база данных
-DB_NAME = 'delivery_bot_v7.db'
+DB_NAME = 'delivery_bot_v8.db'
 menu_active = True
 
 # ==================== ДАННЫЕ МЕНЮ ====================
 DEFAULT_CATEGORIES = [
-    ('breakfasts', '🍳 Завтраки', 'https://images.unsplash.com/photo-1493770348161-369560ae357d?w=1200'),
-    ('hot_drinks', '🔥 Горячие напитки', 'https://images.unsplash.com/photo-1541167760496-1628856ab772?w=1200'),
-    ('cold_drinks', '🧊 Холодные напитки', 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=1200'),
-    ('fresh_drinks', '🍹 Фреши', 'https://images.unsplash.com/photo-1613478223719-2ab802602423?w=1200'),
+    ('breakfasts', '🍳 Завтраки', 'https://picsum.photos/1200/800?random=20'),
+    ('hot_drinks', '🔥 Горячие напитки', 'https://picsum.photos/1200/800?random=21'),
+    ('cold_drinks', '🧊 Холодные напитки', 'https://picsum.photos/1200/800?random=22'),
+    ('fresh_drinks', '🍹 Фреши', 'https://picsum.photos/1200/800?random=23'),
     ('subs', '💳 Подписки', SUBS_BANNER),
     ('mon', 'Понедельник', MAIN_BANNER), 
     ('tue', 'Вторник', MAIN_BANNER), 
@@ -85,7 +87,7 @@ DEFAULT_ITEMS = [
     ('fresh_drinks', 'Фреш Морковь-Яблоко', 'Витаминный заряд (250 мл).', 30000, ''),
     ('fresh_drinks', 'Фреш Детокс', 'Свекла, яблоко, морковь (250 мл).', 32000, ''),
 
-    # ПОДПИСКИ (Расчет: 1 нед = 5 дн. 4 нед = 20 дн со скидкой 10%)
+    # ПОДПИСКИ
     ('subs', 'Подписка: 1 нед (Курица)', 'Комплексные обеды с курицей на 5 рабочих дней.', 290000, ''),
     ('subs', 'Подписка: 1 нед (Говядина)', 'Комплексные обеды с говядиной на 5 рабочих дней.', 310000, ''),
     ('subs', 'Подписка: 4 нед (Курица)', 'Обеды с курицей на месяц (20 дней). Выгода 10%!', 1044000, ''),
@@ -211,7 +213,7 @@ def get_main_keyboard():
         [InlineKeyboardButton("🍳 Завтраки", callback_data="cat_breakfasts")],
         [InlineKeyboardButton("🍱 Комплексный обед дня", callback_data="lunch_today")],
         [InlineKeyboardButton("🥤 Напитки", callback_data="nav_drinks")],
-        [InlineKeyboardButton("🗓 Недельное меню (предазказ)", callback_data="nav_week")],
+        [InlineKeyboardButton("🗓 Недельное меню (предзаказ)", callback_data="nav_week")],
         [InlineKeyboardButton("💳 Подписки на обеды", callback_data="cat_subs")],
         [InlineKeyboardButton("🛍 Корзина", callback_data="cart_list"), InlineKeyboardButton("📜 История", callback_data="history_list")]
     ])
@@ -258,22 +260,41 @@ def get_category_list_keyboard(user_id, cat_id, items):
     keyboard.append([InlineKeyboardButton("🛍 В корзину", callback_data="cart_list"), InlineKeyboardButton("🔙 Назад", callback_data=back_data)])
     return InlineKeyboardMarkup(keyboard)
 
-# ==================== ОТПРАВКА СООБЩЕНИЙ ====================
+# ==================== БРОНЕБОЙНАЯ ОТПРАВКА СООБЩЕНИЙ ====================
 async def edit_media_message(chat_id, message_id, photo_source, caption, reply_markup, context):
     try:
+        # Пробуем заменить картинку и текст
+        if not photo_source:
+            raise ValueError("No photo")
         media = InputMediaPhoto(media=photo_source, caption=caption, parse_mode='HTML')
         await context.bot.edit_message_media(chat_id=chat_id, message_id=message_id, media=media, reply_markup=reply_markup)
-    except Exception:
+    except Exception as e:
+        # Если не получилось, удаляем старое сообщение
         try: await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
         except Exception: pass
-        msg = await context.bot.send_photo(chat_id=chat_id, photo=photo_source, caption=caption, reply_markup=reply_markup, parse_mode='HTML')
+        
+        # Пытаемся отправить как новое сообщение с картинкой
+        try:
+            if photo_source:
+                msg = await context.bot.send_photo(chat_id=chat_id, photo=photo_source, caption=caption, reply_markup=reply_markup, parse_mode='HTML')
+            else:
+                msg = await context.bot.send_message(chat_id=chat_id, text=caption, reply_markup=reply_markup, parse_mode='HTML')
+        except Exception:
+            # Абсолютный fallback: если Telegram блокирует картинку, шлем просто текст!
+            msg = await context.bot.send_message(chat_id=chat_id, text=caption, reply_markup=reply_markup, parse_mode='HTML')
+            
         context.user_data['last_msg_id'] = msg.message_id
 
 async def render_start(chat_id, context):
     caption = "🏠 <b>Главное меню 👇</b>\n\n🍽 Выберите нужный раздел для заказа."
     try: await context.bot.delete_message(chat_id=chat_id, message_id=context.user_data.get('last_msg_id'))
     except Exception: pass
-    msg = await context.bot.send_photo(chat_id=chat_id, photo=MAIN_BANNER, caption=caption, reply_markup=get_main_keyboard(), parse_mode='HTML')
+    
+    try:
+        msg = await context.bot.send_photo(chat_id=chat_id, photo=MAIN_BANNER, caption=caption, reply_markup=get_main_keyboard(), parse_mode='HTML')
+    except Exception:
+        # Fallback на случай блокировки картинки
+        msg = await context.bot.send_message(chat_id=chat_id, text=caption, reply_markup=get_main_keyboard(), parse_mode='HTML')
     context.user_data['last_msg_id'] = msg.message_id
 
 # ==================== ХЕНДЛЕРЫ ====================
@@ -312,7 +333,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "nav_drinks":
         await query.answer()
-        await edit_media_message(user_id, last_msg_id, "https://images.unsplash.com/photo-1541167760496-1628856ab772?w=1200", "<b>🥤 Выберите категорию напитков:</b>", get_drinks_keyboard(), context)
+        await edit_media_message(user_id, last_msg_id, "https://picsum.photos/1200/800?random=30", "<b>🥤 Выберите категорию напитков:</b>", get_drinks_keyboard(), context)
 
     elif data == "nav_week":
         await query.answer()
@@ -330,7 +351,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Сегодня выходной! 😴\nНо вы можете сделать предзаказ на следующую неделю через меню.", show_alert=True)
             return
 
-    # ПРОСМОТР КАТЕГОРИЙ 
+    # ПРОСМОТР КАТЕГОРИЙ (ЕДИНЫМ СПИСКОМ)
     if data.startswith("cat_"):
         await query.answer()
         cat_id = data[4:] 
@@ -409,9 +430,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         try: await context.bot.delete_message(chat_id=user_id, message_id=last_msg_id)
         except: pass
-        if os.path.exists(QR_FILE_NAME):
-            with open(QR_FILE_NAME, "rb") as p: msg = await context.bot.send_photo(chat_id=user_id, photo=p, caption=caption, reply_markup=kb, parse_mode='HTML')
-        else:
+        try:
+            if os.path.exists(QR_FILE_NAME):
+                with open(QR_FILE_NAME, "rb") as p: msg = await context.bot.send_photo(chat_id=user_id, photo=p, caption=caption, reply_markup=kb, parse_mode='HTML')
+            else:
+                msg = await context.bot.send_message(chat_id=user_id, text=caption, reply_markup=kb, parse_mode='HTML')
+        except Exception:
             msg = await context.bot.send_message(chat_id=user_id, text=caption, reply_markup=kb, parse_mode='HTML')
         context.user_data['last_msg_id'] = msg.message_id
 
