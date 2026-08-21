@@ -30,13 +30,13 @@ TOKEN = os.getenv("BOT_TOKEN", "ВАШ_ТОКЕН")
 ADMIN_ID_STR = os.getenv("ADMIN_ID", "ВАШ_ID")
 CHANNEL_ID = os.getenv("CHANNEL_ID", "@your_channel")
 
-# Новые настройки для оплаты Click
+# Настройки для оплаты Click
 CLICK_SERVICE_ID = "52528"
 CLICK_MERCHANT_ID = "20421"
 
 QR_FILE_NAME = "qr.jpg"
 
-# Надежные ссылки на картинки
+# Ссылки на картинки
 MAIN_BANNER = "https://picsum.photos/1200/800?random=10"
 CART_BANNER = "https://picsum.photos/1200/800?random=11"
 LUNCH_BANNER = "https://picsum.photos/1200/800?random=12"
@@ -47,7 +47,7 @@ try:
 except (ValueError, TypeError):
     ADMIN_ID = None
 
-DB_NAME = 'delivery_bot_v8.db'
+DB_NAME = 'delivery_bot_v9.db'
 menu_active = True
 
 # ==================== ДАННЫЕ МЕНЮ ====================
@@ -129,6 +129,14 @@ def seed_menu_if_empty():
     conn.commit()
     conn.close()
 
+def get_categories():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name FROM menu_categories")
+    cats = [{"id": r[0], "name": r[1]} for r in cursor.fetchall()]
+    conn.close()
+    return cats
+
 def get_category_info(cat_id):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -145,6 +153,22 @@ def get_items_by_cat(cat_id):
     conn.close()
     return items
 
+def save_new_dish(data):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO menu_items (cat_id, name, description, price, image) VALUES (?, ?, ?, ?, ?)", 
+                   (data['cat_id'], data['name'], data['desc'], data['price'], data['photo']))
+    conn.commit()
+    conn.close()
+
+def delete_item(item_id):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM menu_items WHERE id = ?", (item_id,))
+    cursor.execute("DELETE FROM active_orders WHERE item_id = ?", (item_id,))
+    conn.commit()
+    conn.close()
+
 def get_user_db(user_id):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -159,6 +183,14 @@ def add_user_db(user_id, phone):
     cursor.execute("INSERT OR REPLACE INTO users (user_id, phone, orders_count) VALUES (?, ?, ?)", (user_id, phone, 0))
     conn.commit()
     conn.close()
+
+def get_all_user_ids():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM users")
+    ids = [r[0] for r in cursor.fetchall()]
+    conn.close()
+    return ids
 
 def update_cart_db(user_id, item_id, item_name, price, count):
     conn = sqlite3.connect(DB_NAME)
@@ -207,7 +239,7 @@ def get_main_keyboard():
         [InlineKeyboardButton("🥤 Напитки", callback_data="nav_drinks")],
         [InlineKeyboardButton("🗓 Недельное меню (предзаказ)", callback_data="nav_week")],
         [InlineKeyboardButton("💳 Подписки на обеды", callback_data="cat_subs")],
-        [InlineKeyboardButton("🛍 Корзина", callback_data="cart_list"), InlineKeyboardButton("📜 История", callback_data="history_list")]
+        [InlineKeyboardButton("🛍 Корзина", callback_data="cart_list")]
     ])
 
 def get_drinks_keyboard():
@@ -281,6 +313,100 @@ async def render_start(chat_id, context):
         msg = await context.bot.send_message(chat_id=chat_id, text=caption, reply_markup=get_main_keyboard(), parse_mode='HTML')
     context.user_data['last_msg_id'] = msg.message_id
 
+
+# ==================== ЛОГИКА АДМИНИСТРАТОРА (ВОССТАНОВЛЕНО) ====================
+async def post_init(application: Application):
+    """РЕГИСТРАЦИЯ КОМАНД ДЛЯ КНОПКИ 'МЕНЮ' В ТЕЛЕГРАМ"""
+    commands = [
+        BotCommand("start", "🏠 Главное меню"),
+        BotCommand("post", "📢 Опубликовать меню в канал")
+    ]
+    if ADMIN_ID:
+        commands.append(BotCommand("admin", "👑 Панель Администратора"))
+    await application.bot.set_my_commands(commands)
+
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not ADMIN_ID or user_id != ADMIN_ID: return
+    
+    keyboard = [
+        [InlineKeyboardButton("📢 Рассылка всем", callback_data="admin_broadcast")],
+        [InlineKeyboardButton("➕ Добавить блюдо", callback_data="admin_add_dish"), InlineKeyboardButton("🗑 Удалить", callback_data="admin_del_dish")],
+        [InlineKeyboardButton("⛔ Открыть/Закрыть прием заказов", callback_data="admin_toggle")]
+    ]
+    await update.message.reply_text("👑 <b>Панель администратора</b>\nЗдесь вы можете редактировать меню и управлять ботом.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+
+async def run_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    users = get_all_user_ids()
+    count = 0
+    msg = await update.message.reply_text("⏳ Рассылка начата...")
+    for uid in users:
+        try:
+            await context.bot.copy_message(chat_id=uid, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
+            count += 1
+            await asyncio.sleep(0.05)
+        except Exception: pass
+    context.user_data['admin_state'] = None
+    await msg.edit_text(f"✅ Рассылка завершена!\nУспешно отправлено: {count} пользователям.")
+
+async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    state = context.user_data.get('admin_state')
+    
+    if text.lower() == 'отмена':
+        context.user_data['admin_state'] = None
+        await update.message.reply_text("❌ Действие отменено.")
+        return True
+        
+    if state == 'WAITING_BROADCAST':
+        await run_broadcast(update, context)
+        return True
+    elif state == 'WAITING_DISH_NAME':
+        context.user_data['new_dish']['name'] = text
+        context.user_data['admin_state'] = 'WAITING_DISH_DESC'
+        await update.message.reply_text("✏️ Введите описание блюда:")
+        return True
+    elif state == 'WAITING_DISH_DESC':
+        context.user_data['new_dish']['desc'] = text
+        context.user_data['admin_state'] = 'WAITING_DISH_PRICE'
+        await update.message.reply_text("💰 Введите цену (только цифры, например 45000):")
+        return True
+    elif state == 'WAITING_DISH_PRICE':
+        if not text.isdigit():
+            await update.message.reply_text("⚠️ Ошибка! Введите только цифры.")
+            return True
+        context.user_data['new_dish']['price'] = int(text)
+        context.user_data['admin_state'] = 'WAITING_DISH_PHOTO'
+        await update.message.reply_text("🖼 Отправьте ссылку на фото блюда (http...) или отправьте саму картинку прямо сюда:")
+        return True
+    elif state == 'WAITING_DISH_PHOTO':
+        context.user_data['new_dish']['photo'] = text 
+        save_new_dish(context.user_data['new_dish'])
+        context.user_data['admin_state'] = None
+        await update.message.reply_text("✅ Блюдо успешно добавлено в меню!")
+        return True
+    return False
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if ADMIN_ID and user_id == ADMIN_ID:
+        state = context.user_data.get('admin_state')
+        if state == 'WAITING_BROADCAST':
+            await run_broadcast(update, context)
+        elif state == 'WAITING_DISH_PHOTO':
+            photo_id = update.message.photo[-1].file_id
+            context.user_data['new_dish']['photo'] = photo_id
+            save_new_dish(context.user_data['new_dish'])
+            context.user_data['admin_state'] = None
+            await update.message.reply_text("✅ Блюдо успешно добавлено в меню!")
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if ADMIN_ID and user_id == ADMIN_ID:
+        if await handle_admin_text(update, context):
+            return
+
+
 # ==================== ХЕНДЛЕРЫ ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -330,15 +456,6 @@ async def post_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Ошибка отправки: {e}\nУбедитесь, что бот является Администратором в канале {CHANNEL_ID}!")
 
-async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if not ADMIN_ID or user_id != ADMIN_ID: return
-    
-    keyboard = [
-        [InlineKeyboardButton("⛔ Открыть/Закрыть прием заказов", callback_data="admin_toggle")]
-    ]
-    await update.message.reply_text("👑 <b>Панель администратора</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
-
 # ----------------------------------------------------
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -352,12 +469,51 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer()
         return
 
-    if data == "admin_toggle":
+    # ВЕТКА АДМИНА
+    if data.startswith("admin_"):
         if not ADMIN_ID or user_id != ADMIN_ID: return
-        global menu_active
-        menu_active = not menu_active
-        status = "ОТКРЫТ ✅" if menu_active else "ЗАКРЫТ ⛔"
-        await query.answer(f"Прием заказов: {status}", show_alert=True)
+        
+        if data == "admin_toggle":
+            global menu_active
+            menu_active = not menu_active
+            status = "ОТКРЫТ ✅" if menu_active else "ЗАКРЫТ ⛔"
+            await query.answer(f"Прием заказов: {status}", show_alert=True)
+            
+        elif data == "admin_broadcast":
+            context.user_data['admin_state'] = 'WAITING_BROADCAST'
+            await query.message.reply_text("📢 Отправьте сообщение для рассылки всем (текст или картинка).\nДля отмены напишите 'отмена'.")
+
+        elif data == "admin_add_dish":
+            cats = get_categories()
+            kb = [[InlineKeyboardButton(c['name'], callback_data=f"admin_addcat_{c['id']}")] for c in cats]
+            await query.message.reply_text("В какую категорию добавить блюдо?", reply_markup=InlineKeyboardMarkup(kb))
+
+        elif data.startswith("admin_addcat_"):
+            cat_id = data.split("_")[2]
+            context.user_data['admin_state'] = 'WAITING_DISH_NAME'
+            context.user_data['new_dish'] = {'cat_id': cat_id}
+            await query.message.reply_text("✏️ Введите название нового блюда.\nДля отмены напишите 'отмена'.")
+
+        elif data == "admin_del_dish":
+            cats = get_categories()
+            kb = [[InlineKeyboardButton(c['name'], callback_data=f"admin_delcat_{c['id']}")] for c in cats]
+            await query.message.reply_text("Из какой категории удалить блюдо?", reply_markup=InlineKeyboardMarkup(kb))
+
+        elif data.startswith("admin_delcat_"):
+            cat_id = data.split("_")[2]
+            items = get_items_by_cat(cat_id)
+            if not items:
+                await query.message.reply_text("В этой категории нет блюд.")
+                return
+            kb = [[InlineKeyboardButton(i['name'], callback_data=f"admin_delitem_{i['id']}")] for i in items]
+            await query.message.reply_text("🗑 Выберите блюдо для удаления:", reply_markup=InlineKeyboardMarkup(kb))
+
+        elif data.startswith("admin_delitem_"):
+            item_id = data.split("_")[2]
+            delete_item(item_id)
+            await query.message.reply_text("✅ Блюдо успешно удалено из меню.")
+        
+        await query.answer()
         return
 
     # НАВИГАЦИЯ
@@ -471,12 +627,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if selected_time == "ASAP":
             selected_time = "Как можно скорее"
         
-        # Сохраняем время выдачи для этого пользователя
         context.user_data['pickup_time'] = selected_time
 
         _, total, _ = get_order_summary(user_id)
         
-        # ==== ДИНАМИЧЕСКАЯ ССЫЛКА CLICK ===
         click_url = f"https://my.click.uz/services/pay/?service_id={CLICK_SERVICE_ID}&merchant_id={CLICK_MERCHANT_ID}&amount={total}"
         
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("💳 Оплатить в Click", url=click_url)], [InlineKeyboardButton("✅ Я оплатил(а)", callback_data="paid_order")]])
@@ -533,11 +687,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_health_check(request): return web.Response(text="Bot OK")
 
 async def main():
-    app_bot = Application.builder().token(TOKEN).build()
+    # ВАЖНО: Добавлено .post_init(post_init), чтобы меню Telegram обновилось!
+    app_bot = Application.builder().token(TOKEN).post_init(post_init).build()
     
     app_bot.add_handler(CommandHandler("start", start))
     app_bot.add_handler(CommandHandler("post", post_to_channel))
     app_bot.add_handler(CommandHandler("admin", admin_command))
+    
+    # Обработчики для редактирования меню админом
+    app_bot.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     
     app_bot.add_handler(MessageHandler(filters.CONTACT, handle_contact))
     app_bot.add_handler(CallbackQueryHandler(button_handler))
