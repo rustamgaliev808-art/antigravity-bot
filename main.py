@@ -30,7 +30,10 @@ TOKEN = os.getenv("BOT_TOKEN", "ВАШ_ТОКЕН")
 ADMIN_ID_STR = os.getenv("ADMIN_ID", "ВАШ_ID")
 CHANNEL_ID = os.getenv("CHANNEL_ID", "@your_channel")
 
-CLICK_PASS_ID = "052528"
+# Новые настройки для оплаты Click
+CLICK_SERVICE_ID = "52528"
+CLICK_MERCHANT_ID = "20421"
+
 QR_FILE_NAME = "qr.jpg"
 
 # Надежные ссылки на картинки
@@ -433,7 +436,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.answer("Этого нет в корзине")
 
-    # КОРЗИНА И ВЫБОР ВРЕМЕНИ (НОВЫЙ ШАГ)
+    # КОРЗИНА И ВЫБОР ВРЕМЕНИ
     elif data == "cart_list":
         await query.answer()
         items_text, total, _ = get_order_summary(user_id)
@@ -472,11 +475,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['pickup_time'] = selected_time
 
         _, total, _ = get_order_summary(user_id)
-        click_url = f"https://my.click.uz/clickpass/{CLICK_PASS_ID}?amount={total}"
+        
+        # ==== ДИНАМИЧЕСКАЯ ССЫЛКА CLICK ===
+        click_url = f"https://my.click.uz/services/pay/?service_id={CLICK_SERVICE_ID}&merchant_id={CLICK_MERCHANT_ID}&amount={total}"
+        
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("💳 Оплатить в Click", url=click_url)], [InlineKeyboardButton("✅ Я оплатил(а)", callback_data="paid_order")]])
         
         formatted_total = f"{total:,}".replace(",", " ")
-        caption = f"🕒 <b>Время выдачи: {selected_time}</b>\n💳 <b>Счёт на {formatted_total} сум!</b>\n\nОбед будет собран и отложен к вашему приходу.\nОтсканируйте <b>QR-код</b> или нажмите кнопку для оплаты."
+        caption = f"🕒 <b>Время выдачи: {selected_time}</b>\n💳 <b>Счёт на {formatted_total} сум!</b>\n\nОбед будет собран и отложен к вашему приходу.\nПерейдите по ссылке или нажмите кнопку для оплаты."
         
         try: await context.bot.delete_message(chat_id=user_id, message_id=last_msg_id)
         except: pass
