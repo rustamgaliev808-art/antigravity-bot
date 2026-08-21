@@ -12,7 +12,9 @@ from telegram import (
     InputMediaPhoto,
     KeyboardButton,
     ReplyKeyboardMarkup,
-    ReplyKeyboardRemove
+    ReplyKeyboardRemove,
+    BotCommandScopeDefault,
+    BotCommandScopeChat
 )
 from telegram.ext import (
     Application,
@@ -27,7 +29,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 # ==================== КОНФИГУРАЦИЯ ====================
 TOKEN = os.getenv("BOT_TOKEN", "ВАШ_ТОКЕН")
-ADMIN_ID_STR = os.getenv("ADMIN_ID", "ВАШ_ID")
+ADMIN_ID_STR = os.getenv("ADMIN_ID", "")
 CHANNEL_ID = os.getenv("CHANNEL_ID", "@your_channel")
 
 # Настройки для оплаты Click
@@ -42,8 +44,9 @@ CART_BANNER = "https://picsum.photos/1200/800?random=11"
 LUNCH_BANNER = "https://picsum.photos/1200/800?random=12"
 SUBS_BANNER = "https://picsum.photos/1200/800?random=13"
 
+# Жесткая очистка ID от случайных пробелов из Railway
 try:
-    ADMIN_ID = int(ADMIN_ID_STR) if ADMIN_ID_STR.isdigit() else None
+    ADMIN_ID = int(ADMIN_ID_STR.strip())
 except (ValueError, TypeError):
     ADMIN_ID = None
 
@@ -314,20 +317,33 @@ async def render_start(chat_id, context):
     context.user_data['last_msg_id'] = msg.message_id
 
 
-# ==================== ЛОГИКА АДМИНИСТРАТОРА (ВОССТАНОВЛЕНО) ====================
+# ==================== СКРЫТОЕ МЕНЮ АДМИНИСТРАТОРА (НОВОЕ) ====================
 async def post_init(application: Application):
-    """РЕГИСТРАЦИЯ КОМАНД ДЛЯ КНОПКИ 'МЕНЮ' В ТЕЛЕГРАМ"""
-    commands = [
-        BotCommand("start", "🏠 Главное меню"),
-        BotCommand("post", "📢 Опубликовать меню в канал")
-    ]
+    """РЕГИСТРАЦИЯ КОМАНД: Обычные пользователи видят только /start, админ видит всё"""
+    
+    # 1. Меню для ВСЕХ
+    await application.bot.set_my_commands(
+        [BotCommand("start", "🏠 Главное меню")],
+        scope=BotCommandScopeDefault()
+    )
+
+    # 2. Секретное меню ТОЛЬКО для админа
     if ADMIN_ID:
-        commands.append(BotCommand("admin", "👑 Панель Администратора"))
-    await application.bot.set_my_commands(commands)
+        admin_cmds = [
+            BotCommand("start", "🏠 Главное меню"),
+            BotCommand("admin", "👑 Панель Администратора"),
+            BotCommand("post", "📢 Опубликовать меню в канал")
+        ]
+        try:
+            await application.bot.set_my_commands(admin_cmds, scope=BotCommandScopeChat(ADMIN_ID))
+        except Exception as e:
+            logging.error(f"Не удалось установить команды админа: {e}")
+
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    if not ADMIN_ID or user_id != ADMIN_ID: return
+    if not ADMIN_ID or user_id != ADMIN_ID: 
+        return # Если это не админ, команда просто игнорируется
     
     keyboard = [
         [InlineKeyboardButton("📢 Рассылка всем", callback_data="admin_broadcast")],
@@ -428,7 +444,6 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def post_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not ADMIN_ID or user_id != ADMIN_ID:
-        await update.message.reply_text("⛔ У вас нет прав администратора.")
         return
 
     weekday = datetime.now().weekday()
@@ -687,14 +702,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_health_check(request): return web.Response(text="Bot OK")
 
 async def main():
-    # ВАЖНО: Добавлено .post_init(post_init), чтобы меню Telegram обновилось!
     app_bot = Application.builder().token(TOKEN).post_init(post_init).build()
     
     app_bot.add_handler(CommandHandler("start", start))
     app_bot.add_handler(CommandHandler("post", post_to_channel))
     app_bot.add_handler(CommandHandler("admin", admin_command))
     
-    # Обработчики для редактирования меню админом
     app_bot.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     
