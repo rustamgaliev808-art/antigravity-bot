@@ -12,9 +12,7 @@ from telegram import (
     InputMediaPhoto,
     KeyboardButton,
     ReplyKeyboardMarkup,
-    ReplyKeyboardRemove,
-    BotCommandScopeDefault,
-    BotCommandScopeChat
+    ReplyKeyboardRemove
 )
 from telegram.ext import (
     Application,
@@ -44,7 +42,6 @@ CART_BANNER = "https://picsum.photos/1200/800?random=11"
 LUNCH_BANNER = "https://picsum.photos/1200/800?random=12"
 SUBS_BANNER = "https://picsum.photos/1200/800?random=13"
 
-# Жесткая очистка ID от случайных пробелов из Railway
 try:
     ADMIN_ID = int(ADMIN_ID_STR.strip())
 except (ValueError, TypeError):
@@ -317,33 +314,35 @@ async def render_start(chat_id, context):
     context.user_data['last_msg_id'] = msg.message_id
 
 
-# ==================== СКРЫТОЕ МЕНЮ АДМИНИСТРАТОРА (НОВОЕ) ====================
+# ==================== РЕГИСТРАЦИЯ КОМАНД (ГЛОБАЛЬНАЯ) ====================
 async def post_init(application: Application):
-    """РЕГИСТРАЦИЯ КОМАНД: Обычные пользователи видят только /start, админ видит всё"""
+    # Принудительно очищаем старое закешированное меню Telegram
+    await application.bot.delete_my_commands()
     
-    # 1. Меню для ВСЕХ
-    await application.bot.set_my_commands(
-        [BotCommand("start", "🏠 Главное меню")],
-        scope=BotCommandScopeDefault()
-    )
+    # Записываем новое глобальное меню (будет видно всем, но сработает только у админа)
+    commands = [
+        BotCommand("start", "🏠 Главное меню"),
+        BotCommand("admin", "👑 Панель Администратора (Ваша)"),
+        BotCommand("post", "📢 Опубликовать меню в канал"),
+        BotCommand("myid", "🆔 Узнать свой ID (для настройки)")
+    ]
+    await application.bot.set_my_commands(commands)
 
-    # 2. Секретное меню ТОЛЬКО для админа
-    if ADMIN_ID:
-        admin_cmds = [
-            BotCommand("start", "🏠 Главное меню"),
-            BotCommand("admin", "👑 Панель Администратора"),
-            BotCommand("post", "📢 Опубликовать меню в канал")
-        ]
-        try:
-            await application.bot.set_my_commands(admin_cmds, scope=BotCommandScopeChat(ADMIN_ID))
-        except Exception as e:
-            logging.error(f"Не удалось установить команды админа: {e}")
 
+# ==================== КОМАНДЫ АДМИНА И ТЕСТЫ ====================
+async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Позволяет узнать свой ID прямо в боте, чтобы вписать в Railway"""
+    user_id = update.effective_user.id
+    text = f"Ваш Telegram ID:\n<code>{user_id}</code>\n\nСкопируйте его и вставьте в переменную ADMIN_ID в Railway."
+    await update.message.reply_text(text, parse_mode='HTML')
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    
+    # Жесткая проверка: если это не ваш ID, команда не сработает
     if not ADMIN_ID or user_id != ADMIN_ID: 
-        return # Если это не админ, команда просто игнорируется
+        await update.message.reply_text("⛔ У вас нет прав администратора.")
+        return
     
     keyboard = [
         [InlineKeyboardButton("📢 Рассылка всем", callback_data="admin_broadcast")],
@@ -352,6 +351,39 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("👑 <b>Панель администратора</b>\nЗдесь вы можете редактировать меню и управлять ботом.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
+async def post_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not ADMIN_ID or user_id != ADMIN_ID:
+        await update.message.reply_text("⛔ У вас нет прав администратора.")
+        return
+
+    weekday = datetime.now().weekday()
+    
+    posts_by_day = {
+        0: ("<b>Начинаем неделю вкусно и продуктивно! ☀️</b>\n\nСегодня на обед мы приготовили для вас домашние комплексы. В каждый сет по умолчанию входит салат <b>Винегрет</b> и освежающий компот! 🍹\n\n<b>На выбор:</b>\n🥩 Сочные тефтели из говядины с рассыпчатой гречкой — <i>62 000 сум</i>\n🍗 Нежная курица в сливочном соусе с рисом — <i>58 000 сум</i>\n\nУспейте сделать заказ до 11:00!", LUNCH_BANNER),
+        1: ("<b>Время сытного обеда! Что у нас сегодня? 😋</b>\n\nНаши комплексные обеды уже ждут вас. Напоминаем: компот и свежий овощной салат уже включены в стоимость! 🥗🥤\n\n<b>На выбор:</b>\n🥩 Тушеная говядина с тающим во рту картофелем — <i>62 000 сум</i>\n🍗 Куриное филе под сырно-томатной корочкой с воздушным пюре — <i>58 000 сум</i>\n\nЗарядитесь энергией на вторую половину дня!", LUNCH_BANNER),
+        2: ("<b>Экватор рабочей недели! Порадуйте себя вкусным обедом 🍽</b>\n\nСегодня в нашем меню настоящие хиты! В качестве легкого старта в каждом комплексе вас ждет <b>Греческий салат</b> и прохладный компот. 🍅🥒\n\n<b>Горячее на выбор:</b>\n🥩 Классический Бефстроганов (пюре/рис) — <i>62 000 сум</i>\n🍗 Ароматный куриный казан-кабоб — <i>58 000 сум</i>\n\nВыбирайте то, что нравится больше!", LUNCH_BANNER),
+        3: ("<b>Четверг — день Плова! 🍚🔥</b>\n\nКакая же неделя без традиционного плова? Сегодня мы подаем его с классическим салатом <b>Ачик-чучук</b> (или соленьями) и компотом.\n\n<b>Наши комплексы на сегодня:</b>\n🥩 Традиционный плов из говядины — <i>62 000 сум</i>\n🍗 Сочная курица с овощами и домашним пюре — <i>58 000 сум</i>\n\nПорции разлетаются быстро!", LUNCH_BANNER),
+        4: ("<b>Пятница! Вкусно завершаем рабочую неделю 🎉</b>\n\nСегодня к горячему мы подаем всеми любимый салат <b>Цезарь</b> и наш фирменный компот! 🥬🍹\n\n<b>Выбирайте свой комплекс:</b>\n🥩 Сытный гуляш из говядины (рис/гречка) — <i>62 000 сум</i>\n🍗 Румяные запеченные куриные бедра (рис/гречка) — <i>58 000 сум</i>\n\nСпасибо, что обедали с нами всю неделю!", LUNCH_BANNER)
+    }
+
+    if weekday not in posts_by_day:
+        await update.message.reply_text("Сегодня выходной! Готовых текстов для выходных нет.")
+        return
+
+    text, photo = posts_by_day[weekday]
+    bot_info = await context.bot.get_me()
+    bot_url = f"https://t.me/{bot_info.username}"
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🥗 Заказать обед в 2 клика", url=bot_url)]])
+
+    try:
+        await context.bot.send_photo(chat_id=CHANNEL_ID, photo=photo, caption=text, reply_markup=keyboard, parse_mode='HTML')
+        await update.message.reply_text(f"✅ Успешно! Пост на сегодняшний день отправлен в канал {CHANNEL_ID}.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка отправки: {e}\nУбедитесь, что бот является Администратором в канале {CHANNEL_ID}!")
+
+
+# ==================== ОБРАБОТКА ДЕЙСТВИЙ АДМИНА ====================
 async def run_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users = get_all_user_ids()
     count = 0
@@ -422,7 +454,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await handle_admin_text(update, context):
             return
 
-
 # ==================== ХЕНДЛЕРЫ ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -441,37 +472,6 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ Номер сохранён.", reply_markup=ReplyKeyboardRemove())
         await render_start(user_id, context)
 
-async def post_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if not ADMIN_ID or user_id != ADMIN_ID:
-        return
-
-    weekday = datetime.now().weekday()
-    
-    posts_by_day = {
-        0: ("<b>Начинаем неделю вкусно и продуктивно! ☀️</b>\n\nСегодня на обед мы приготовили для вас домашние комплексы. В каждый сет по умолчанию входит салат <b>Винегрет</b> и освежающий компот! 🍹\n\n<b>На выбор:</b>\n🥩 Сочные тефтели из говядины с рассыпчатой гречкой — <i>62 000 сум</i>\n🍗 Нежная курица в сливочном соусе с рисом — <i>58 000 сум</i>\n\nУспейте сделать заказ до 11:00!", LUNCH_BANNER),
-        1: ("<b>Время сытного обеда! Что у нас сегодня? 😋</b>\n\nНаши комплексные обеды уже ждут вас. Напоминаем: компот и свежий овощной салат уже включены в стоимость! 🥗🥤\n\n<b>На выбор:</b>\n🥩 Тушеная говядина с тающим во рту картофелем — <i>62 000 сум</i>\n🍗 Куриное филе под сырно-томатной корочкой с воздушным пюре — <i>58 000 сум</i>\n\nЗарядитесь энергией на вторую половину дня!", LUNCH_BANNER),
-        2: ("<b>Экватор рабочей недели! Порадуйте себя вкусным обедом 🍽</b>\n\nСегодня в нашем меню настоящие хиты! В качестве легкого старта в каждом комплексе вас ждет <b>Греческий салат</b> и прохладный компот. 🍅🥒\n\n<b>Горячее на выбор:</b>\n🥩 Классический Бефстроганов (пюре/рис) — <i>62 000 сум</i>\n🍗 Ароматный куриный казан-кабоб — <i>58 000 сум</i>\n\nВыбирайте то, что нравится больше!", LUNCH_BANNER),
-        3: ("<b>Четверг — день Плова! 🍚🔥</b>\n\nКакая же неделя без традиционного плова? Сегодня мы подаем его с классическим салатом <b>Ачик-чучук</b> (или соленьями) и компотом.\n\n<b>Наши комплексы на сегодня:</b>\n🥩 Традиционный плов из говядины — <i>62 000 сум</i>\n🍗 Сочная курица с овощами и домашним пюре — <i>58 000 сум</i>\n\nПорции разлетаются быстро!", LUNCH_BANNER),
-        4: ("<b>Пятница! Вкусно завершаем рабочую неделю 🎉</b>\n\nСегодня к горячему мы подаем всеми любимый салат <b>Цезарь</b> и наш фирменный компот! 🥬🍹\n\n<b>Выбирайте свой комплекс:</b>\n🥩 Сытный гуляш из говядины (рис/гречка) — <i>62 000 сум</i>\n🍗 Румяные запеченные куриные бедра (рис/гречка) — <i>58 000 сум</i>\n\nСпасибо, что обедали с нами всю неделю!", LUNCH_BANNER)
-    }
-
-    if weekday not in posts_by_day:
-        await update.message.reply_text("Сегодня выходной! Готовых текстов для выходных нет.")
-        return
-
-    text, photo = posts_by_day[weekday]
-    bot_info = await context.bot.get_me()
-    bot_url = f"https://t.me/{bot_info.username}"
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🥗 Заказать обед в 2 клика", url=bot_url)]])
-
-    try:
-        await context.bot.send_photo(chat_id=CHANNEL_ID, photo=photo, caption=text, reply_markup=keyboard, parse_mode='HTML')
-        await update.message.reply_text(f"✅ Успешно! Пост на сегодняшний день отправлен в канал {CHANNEL_ID}.")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Ошибка отправки: {e}\nУбедитесь, что бот является Администратором в канале {CHANNEL_ID}!")
-
-# ----------------------------------------------------
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -707,6 +707,7 @@ async def main():
     app_bot.add_handler(CommandHandler("start", start))
     app_bot.add_handler(CommandHandler("post", post_to_channel))
     app_bot.add_handler(CommandHandler("admin", admin_command))
+    app_bot.add_handler(CommandHandler("myid", myid_command)) # НОВАЯ ПОЛЕЗНАЯ КОМАНДА
     
     app_bot.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
