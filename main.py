@@ -3,7 +3,7 @@ import logging
 import asyncio
 import sqlite3
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 from aiohttp import web
 from telegram import (
     Update,
@@ -36,6 +36,7 @@ CLICK_SERVICE_ID = "52528"
 CLICK_MERCHANT_ID = "20421"
 QR_FILE_NAME = "qr.jpg"
 
+# Профессиональные изображения для баннеров
 MAIN_BANNER = "https://images.unsplash.com/photo-1498837167922-41cfa6f318ba?q=80&w=1200&auto=format&fit=crop"
 CART_BANNER = "https://images.unsplash.com/photo-1556742044-3c52d6e88c62?q=80&w=1200&auto=format&fit=crop"
 LUNCH_BANNER = "https://images.unsplash.com/photo-1543339308-43e59d6b73a6?q=80&w=1200&auto=format&fit=crop"
@@ -46,8 +47,7 @@ try:
 except (ValueError, TypeError):
     ADMIN_ID = None
 
-# Версия 17 - Выбор времени, своя дата, скидка 20%
-DB_NAME = 'delivery_bot_v17.db'
+DB_NAME = 'delivery_bot_v18.db'
 menu_active = True
 
 # ==================== ДАННЫЕ МЕНЮ ====================
@@ -237,8 +237,8 @@ def get_order_summary(user_id):
     for item_id, data in cart.items():
         name, unit_price, cnt = data['name'], data['price'], data['count']
         total_price = unit_price * cnt
-        # ЖИРНЫЙ ШРИФТ В КОРЗИНЕ
-        formatted_lines.append(f"<b>• {name}</b> x{cnt} — <b>{total_price:,} сум</b>".replace(",", " "))
+        # Убрал внутренние <b>, так как весь текст будет обернут в <b>
+        formatted_lines.append(f"• {name} x{cnt} — {total_price:,} сум".replace(",", " "))
         short_lines.append(f"{name} x{cnt}")
         total += total_price
     return "\n".join(formatted_lines), total, ", ".join(short_lines)
@@ -314,7 +314,7 @@ async def edit_media_message(chat_id, message_id, photo_source, caption, reply_m
         context.user_data['last_msg_id'] = msg.message_id
 
 async def render_start(chat_id, context):
-    caption = "<b>Главное меню</b>\n\nВыберите нужный раздел для заказа."
+    caption = "<b>Главное меню\n\nВыберите нужный раздел для заказа.</b>"
     try: await context.bot.delete_message(chat_id=chat_id, message_id=context.user_data.get('last_msg_id'))
     except Exception: pass
     
@@ -330,7 +330,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     init_db()
     if not get_user_db(user_id):
         keyboard = [[KeyboardButton("📱 Поделиться номером", request_contact=True)]]
-        await context.bot.send_message(chat_id=user_id, text="Для начала работы, пожалуйста, поделитесь номером телефона.", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True))
+        await context.bot.send_message(chat_id=user_id, text="<b>Для начала работы, пожалуйста, поделитесь номером телефона.</b>", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True), parse_mode='HTML')
     else:
         await render_start(user_id, context)
 
@@ -339,18 +339,18 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     contact = update.message.contact
     if contact:
         add_user_db(user_id, contact.phone_number)
-        await update.message.reply_text("✅ Номер сохранен.", reply_markup=ReplyKeyboardRemove())
+        await update.message.reply_text("<b>✅ Номер сохранен.</b>", reply_markup=ReplyKeyboardRemove(), parse_mode='HTML')
         await render_start(user_id, context)
 
 async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    text = f"Ваш Telegram ID:\n<code>{user_id}</code>\n\nСкопируйте его и вставьте в переменную ADMIN_ID в Railway."
+    text = f"<b>Ваш Telegram ID:\n<code>{user_id}</code>\n\nСкопируйте его и вставьте в переменную ADMIN_ID в Railway.</b>"
     await update.message.reply_text(text, parse_mode='HTML')
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not ADMIN_ID or user_id != ADMIN_ID: 
-        await update.message.reply_text("⛔ У вас нет прав администратора.")
+        await update.message.reply_text("<b>⛔ У вас нет прав администратора.</b>", parse_mode='HTML')
         return
     
     keyboard = [
@@ -359,7 +359,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📊 Скачать отчет (Excel)", callback_data="admin_export_excel")],
         [InlineKeyboardButton("⛔ Открыть/Закрыть заказы", callback_data="admin_toggle")]
     ]
-    await update.message.reply_text("👑 <b>Панель администратора</b>\nУправление меню и отчетами.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    await update.message.reply_text("<b>👑 Панель администратора\nУправление меню и отчетами.</b>", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 async def post_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -367,15 +367,15 @@ async def post_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     weekday = datetime.now().weekday()
     posts_by_day = {
-        0: ("<b>Понедельник — продуктивное начало!</b>\n\nВ комплекс уже включен <b>Витаминный салат</b> и <b>Шербет</b>!\n\n<b>На выбор:</b>\n• 🥩 Жаркое с картофелем — <i>62 000 сум</i>\n• 🍗 Курица Карри — <i>58 000 сум</i>", MONDAY_BANNER),
-        1: ("<b>Вторник — время вкусного обеда!</b>\n\nВ комплекс уже включен <b>Французский салат</b> и <b>Айс-ти</b>!\n\n<b>На выбор:</b>\n• 🥩 Говядина с овощами — <i>62 000 сум</i>\n• 🍗 Куриные котлеты — <i>58 000 сум</i>", LUNCH_BANNER),
-        2: ("<b>Среда — экватор недели!</b>\n\nВ комплекс уже включен <b>Овощной салат</b> и <b>Шербет</b>!\n\n<b>На выбор:</b>\n• 🥩 Бефстроганов — <i>62 000 сум</i>\n• 🍗 Куриная отбивная — <i>58 000 сум</i>", LUNCH_BANNER),
-        3: ("<b>Четверг — день Плова!</b>\n\nВ комплекс уже включен <b>Салат Ачик-чучук</b> и <b>Айс-ти</b>!\n\n<b>На выбор:</b>\n• 🥩 Плов из говядины — <i>62 000 сум</i>\n• 🍗 Куриный Ган-пан — <i>58 000 сум</i>", LUNCH_BANNER),
-        4: ("<b>Пятница — завершаем неделю вкусно!</b>\n\nВ комплекс уже включен <b>Греческий салат</b> и <b>Шербет</b>!\n\n<b>На выбор:</b>\n• 🥩 Гуляш из говядины — <i>62 000 сум</i>\n• 🍗 Куриный казан-кебаб — <i>58 000 сум</i>", LUNCH_BANNER)
+        0: ("<b>Понедельник — продуктивное начало!\n\nВ комплекс уже включен Витаминный салат и Шербет!\n\nНа выбор:\n• 🥩 Жаркое с картофелем — 62 000 сум\n• 🍗 Курица Карри — 58 000 сум</b>", MONDAY_BANNER),
+        1: ("<b>Вторник — время вкусного обеда!\n\nВ комплекс уже включен Французский салат и Айс-ти!\n\nНа выбор:\n• 🥩 Говядина с овощами — 62 000 сум\n• 🍗 Куриные котлеты — 58 000 сум</b>", LUNCH_BANNER),
+        2: ("<b>Среда — экватор недели!\n\nВ комплекс уже включен Овощной салат и Шербет!\n\nНа выбор:\n• 🥩 Бефстроганов — 62 000 сум\n• 🍗 Куриная отбивная — 58 000 сум</b>", LUNCH_BANNER),
+        3: ("<b>Четверг — день Плова!\n\nВ комплекс уже включен Салат Ачик-чучук и Айс-ти!\n\nНа выбор:\n• 🥩 Плов из говядины — 62 000 сум\n• 🍗 Куриный Ган-пан — 58 000 сум</b>", LUNCH_BANNER),
+        4: ("<b>Пятница — завершаем неделю вкусно!\n\nВ комплекс уже включен Греческий салат и Шербет!\n\nНа выбор:\n• 🥩 Гуляш из говядины — 62 000 сум\n• 🍗 Куриный казан-кебаб — 58 000 сум</b>", LUNCH_BANNER)
     }
 
     if weekday not in posts_by_day:
-        await update.message.reply_text("Сегодня выходной! Готовых текстов нет.")
+        await update.message.reply_text("<b>Сегодня выходной! Готовых текстов нет.</b>", parse_mode='HTML')
         return
 
     text, photo = posts_by_day[weekday]
@@ -385,14 +385,14 @@ async def post_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         await context.bot.send_photo(chat_id=CHANNEL_ID, photo=photo, caption=text, reply_markup=keyboard, parse_mode='HTML')
-        await update.message.reply_text(f"✅ Пост отправлен в канал {CHANNEL_ID}.")
+        await update.message.reply_text(f"<b>✅ Пост отправлен в канал {CHANNEL_ID}.</b>", parse_mode='HTML')
     except Exception as e:
-        await update.message.reply_text(f"❌ Ошибка отправки: {e}")
+        await update.message.reply_text(f"<b>❌ Ошибка отправки: {e}</b>", parse_mode='HTML')
 
 async def run_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users = get_all_user_ids()
     count = 0
-    msg = await update.message.reply_text("⏳ Рассылка начата...")
+    msg = await update.message.reply_text("<b>⏳ Рассылка начата...</b>", parse_mode='HTML')
     for uid in users:
         try:
             await context.bot.copy_message(chat_id=uid, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
@@ -400,13 +400,12 @@ async def run_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await asyncio.sleep(0.05)
         except Exception: pass
     context.user_data['admin_state'] = None
-    await msg.edit_text(f"✅ Рассылка завершена!\nУспешно отправлено: {count} пользователям.")
+    await msg.edit_text(f"<b>✅ Рассылка завершена!\nУспешно отправлено: {count} пользователям.</b>", parse_mode='HTML')
 
-# === ОБРАБОТЧИК ТЕКСТА (ВКЛЮЧАЯ "СВОЕ ВРЕМЯ") ===
+# === ОБРАБОТЧИК ТЕКСТА ===
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
-    # 1. Проверяем, ждет ли бот свое время от клиента
     state = context.user_data.get('user_state')
     if state == 'WAITING_CUSTOM_TIME':
         time_str = update.message.text
@@ -417,10 +416,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['final_total'] = base_total
         
         click_url = f"https://my.click.uz/services/pay/?service_id={CLICK_SERVICE_ID}&merchant_id={CLICK_MERCHANT_ID}&amount={base_total}"
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("💳 Оплатить через Click", url=click_url)], [InlineKeyboardButton("✅ Оплата завершена", callback_data="paid_order")]])
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💳 Оплатить через Click", url=click_url)], 
+            [InlineKeyboardButton("✅ Оплата завершена", callback_data="paid_order")],
+            [InlineKeyboardButton("🔙 Назад", callback_data="select_time")]
+        ])
         
         formatted_total = f"{base_total:,}".replace(",", " ")
-        caption = f"<b>🧾 Счет сформирован</b>\n\n<b>Сумма к оплате:</b> {formatted_total} сум\n<b>Время выдачи:</b> {time_str}\n\nПожалуйста, перейдите по ссылке для оплаты."
+        caption = f"<b>🧾 Счет сформирован\n\nСумма к оплате: {formatted_total} сум\nВремя выдачи: {time_str}\n\nПожалуйста, перейдите по ссылке для оплаты.</b>"
         
         try:
             msg = await update.message.reply_photo(photo=CART_BANNER, caption=caption, reply_markup=kb, parse_mode='HTML')
@@ -430,13 +433,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['last_msg_id'] = msg.message_id
         return
 
-    # 2. Логика админа
+    # Админ
     if ADMIN_ID and user_id == ADMIN_ID:
         text = update.message.text
         admin_state = context.user_data.get('admin_state')
         if text.lower() == 'отмена':
             context.user_data['admin_state'] = None
-            await update.message.reply_text("❌ Отменено.")
+            await update.message.reply_text("<b>❌ Отменено.</b>", parse_mode='HTML')
             return
         if admin_state == 'WAITING_BROADCAST':
             await run_broadcast(update, context)
@@ -444,26 +447,26 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif admin_state == 'WAITING_DISH_NAME':
             context.user_data['new_dish']['name'] = text
             context.user_data['admin_state'] = 'WAITING_DISH_DESC'
-            await update.message.reply_text("✏️ Введите описание блюда:")
+            await update.message.reply_text("<b>✏️ Введите описание блюда:</b>", parse_mode='HTML')
             return
         elif admin_state == 'WAITING_DISH_DESC':
             context.user_data['new_dish']['desc'] = text
             context.user_data['admin_state'] = 'WAITING_DISH_PRICE'
-            await update.message.reply_text("💰 Введите цену (только цифры):")
+            await update.message.reply_text("<b>💰 Введите цену (только цифры):</b>", parse_mode='HTML')
             return
         elif admin_state == 'WAITING_DISH_PRICE':
             if not text.isdigit():
-                await update.message.reply_text("⚠️ Только цифры.")
+                await update.message.reply_text("<b>⚠️ Только цифры.</b>", parse_mode='HTML')
                 return
             context.user_data['new_dish']['price'] = int(text)
             context.user_data['admin_state'] = 'WAITING_DISH_PHOTO'
-            await update.message.reply_text("🖼 Отправьте ссылку или картинку:")
+            await update.message.reply_text("<b>🖼 Отправьте ссылку или картинку:</b>", parse_mode='HTML')
             return
         elif admin_state == 'WAITING_DISH_PHOTO':
             context.user_data['new_dish']['photo'] = text 
             save_new_dish(context.user_data['new_dish'])
             context.user_data['admin_state'] = None
-            await update.message.reply_text("✅ Блюдо добавлено!")
+            await update.message.reply_text("<b>✅ Блюдо добавлено!</b>", parse_mode='HTML')
             return
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -477,7 +480,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['new_dish']['photo'] = photo_id
             save_new_dish(context.user_data['new_dish'])
             context.user_data['admin_state'] = None
-            await update.message.reply_text("✅ Блюдо добавлено!")
+            await update.message.reply_text("<b>✅ Блюдо добавлено!</b>", parse_mode='HTML')
 
 # ==================== ОСНОВНОЙ ОБРАБОТЧИК КНОПОК ====================
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -501,32 +504,32 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer(f"Заказы: {status}", show_alert=True)
         elif data == "admin_broadcast":
             context.user_data['admin_state'] = 'WAITING_BROADCAST'
-            await query.message.reply_text("Отправьте сообщение (текст/фото). Для отмены напишите 'отмена'.")
+            await query.message.reply_text("<b>Отправьте сообщение (текст/фото). Для отмены напишите 'отмена'.</b>", parse_mode='HTML')
         elif data == "admin_add_dish":
             cats = get_categories()
             kb = [[InlineKeyboardButton(c['name'], callback_data=f"admin_addcat_{c['id']}")] for c in cats]
-            await query.message.reply_text("В какую категорию?", reply_markup=InlineKeyboardMarkup(kb))
+            await query.message.reply_text("<b>В какую категорию?</b>", reply_markup=InlineKeyboardMarkup(kb), parse_mode='HTML')
         elif data.startswith("admin_addcat_"):
             cat_id = data.split("_")[2]
             context.user_data['admin_state'] = 'WAITING_DISH_NAME'
             context.user_data['new_dish'] = {'cat_id': cat_id}
-            await query.message.reply_text("Введите название блюда:")
+            await query.message.reply_text("<b>Введите название блюда:</b>", parse_mode='HTML')
         elif data == "admin_del_dish":
             cats = get_categories()
             kb = [[InlineKeyboardButton(c['name'], callback_data=f"admin_delcat_{c['id']}")] for c in cats]
-            await query.message.reply_text("Откуда удалить блюдо?", reply_markup=InlineKeyboardMarkup(kb))
+            await query.message.reply_text("<b>Откуда удалить блюдо?</b>", reply_markup=InlineKeyboardMarkup(kb), parse_mode='HTML')
         elif data.startswith("admin_delcat_"):
             cat_id = data.split("_")[2]
             items = get_items_by_cat(cat_id)
             if not items:
-                await query.message.reply_text("Пусто.")
+                await query.message.reply_text("<b>Пусто.</b>", parse_mode='HTML')
                 return
             kb = [[InlineKeyboardButton(i['name'], callback_data=f"admin_delitem_{i['id']}")] for i in items]
-            await query.message.reply_text("Выберите блюдо для удаления:", reply_markup=InlineKeyboardMarkup(kb))
+            await query.message.reply_text("<b>Выберите блюдо для удаления:</b>", reply_markup=InlineKeyboardMarkup(kb), parse_mode='HTML')
         elif data.startswith("admin_delitem_"):
             item_id = data.split("_")[2]
             delete_item(item_id)
-            await query.message.reply_text("Удалено.")
+            await query.message.reply_text("<b>Удалено.</b>", parse_mode='HTML')
         elif data == "admin_export_excel":
             orders = get_all_orders_for_export()
             if not orders:
@@ -542,7 +545,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     phone_excel = f'="{raw_phone}"' 
                     writer.writerow([order_id, date_str, phone_excel, items_str, total])
             with open(filename, 'rb') as doc:
-                await context.bot.send_document(chat_id=user_id, document=doc, caption="<b>Отчет готов.</b>\nВ Excel нажмите Ctrl+A, затем 2 раза кликните по границе любой колонки сверху.", parse_mode='HTML')
+                await context.bot.send_document(chat_id=user_id, document=doc, caption="<b>Отчет готов.\nВ Excel нажмите Ctrl+A, затем 2 раза кликните по границе любой колонки сверху.</b>", parse_mode='HTML')
             os.remove(filename)
             await query.answer("Отчет отправлен.")
         await query.answer()
@@ -551,16 +554,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # НАВИГАЦИЯ
     if data == "home":
         await query.answer()
-        context.user_data['user_state'] = None # Сброс состояния ввода
-        await edit_media_message(user_id, last_msg_id, MAIN_BANNER, "<b>Главное меню</b>\n\nВыберите нужный раздел для заказа.", get_main_keyboard(), context)
+        context.user_data['user_state'] = None
+        await edit_media_message(user_id, last_msg_id, MAIN_BANNER, "<b>Главное меню\n\nВыберите нужный раздел для заказа.</b>", get_main_keyboard(), context)
 
     elif data == "nav_drinks":
         await query.answer()
-        await edit_media_message(user_id, last_msg_id, "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?q=80&w=1200&auto=format&fit=crop", "<b>Напитки</b>\nВыберите категорию:", get_drinks_keyboard(), context)
+        await edit_media_message(user_id, last_msg_id, "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?q=80&w=1200&auto=format&fit=crop", "<b>Напитки\n\nВыберите категорию:</b>", get_drinks_keyboard(), context)
 
     elif data == "nav_week":
         await query.answer()
-        await edit_media_message(user_id, last_msg_id, MAIN_BANNER, "<b>Меню на неделю</b>\nПосмотрите расписание обедов:", get_week_menu_keyboard(), context)
+        await edit_media_message(user_id, last_msg_id, MAIN_BANNER, "<b>Меню на неделю\n\nПосмотрите расписание обедов:</b>", get_week_menu_keyboard(), context)
 
     elif data == "lunch_today":
         weekday = datetime.now().weekday()
@@ -572,7 +575,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer()
         data = f"cat_{cat_id}" 
 
-    # ПРОСМОТР КАТЕГОРИЙ И ДОБАВЛЕНИЕ
+    # ПРОСМОТР КАТЕГОРИЙ
     if data.startswith("cat_"):
         if data != "lunch_today": 
             try: await query.answer()
@@ -581,10 +584,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         items = get_items_by_cat(cat_id)
         cat_info = get_category_info(cat_id)
         if not items or not cat_info: return
-        caption = f"<b>{cat_info['name']}</b>\n\n"
+        
+        caption = f"<b>{cat_info['name']}\n\n"
         for item in items:
-            price_str = f" — <b>{item['price']:,} сум</b>".replace(",", " ") if item['price'] > 0 else ""
-            caption += f"<b>{item['name']}</b>{price_str}\n<i>{item['description']}</i>\n\n"
+            price_str = f" — {item['price']:,} сум".replace(",", " ") if item['price'] > 0 else ""
+            caption += f"• {item['name']}{price_str}\n{item['description']}\n\n"
+        caption = caption.strip() + "</b>"
+        
         await edit_media_message(user_id, last_msg_id, cat_info['banner'], caption, get_category_list_keyboard(user_id, cat_id, items), context)
 
     elif data.startswith("list_add_"):
@@ -613,15 +619,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer()
             await context.bot.edit_message_reply_markup(chat_id=user_id, message_id=last_msg_id, reply_markup=get_category_list_keyboard(user_id, cat_id, items))
 
-    # КОРЗИНА И НОВЫЙ ВЫБОР ВРЕМЕНИ
+    # КОРЗИНА И ВЫБОР ВРЕМЕНИ
     elif data == "cart_list":
         await query.answer()
-        context.user_data['user_state'] = None # Сброс
+        context.user_data['user_state'] = None 
         items_text, total, _ = get_order_summary(user_id)
         if not items_text:
             await edit_media_message(user_id, last_msg_id, CART_BANNER, "<b>Ваша корзина пуста.</b>", get_main_keyboard(), context)
             return
-        caption = f"<b>Ваш заказ:</b>\n\n{items_text}\n\n<b>Итого: {total:,} сум</b>\n\nПерейти к оформлению?".replace(",", " ")
+        caption = f"<b>Ваш заказ:\n\n{items_text}\n\nИтого: {total:,} сум\n\nПерейти к оформлению?</b>".replace(",", " ")
         kb = [[InlineKeyboardButton("💳 Оформить заказ", callback_data="select_time")], [InlineKeyboardButton("🗑 Очистить корзину", callback_data="cancel_order"), InlineKeyboardButton("🔙 В меню", callback_data="home")]]
         await edit_media_message(user_id, last_msg_id, CART_BANNER, caption, InlineKeyboardMarkup(kb), context)
 
@@ -639,10 +645,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("✍️ Указать свое время", callback_data="time_custom")],
             [InlineKeyboardButton("🔙 Назад в корзину", callback_data="cart_list")]
         ])
-        caption = "<b>🕒 Выберите время выдачи заказа:</b>\n<i>Стандартное время работы: с 10:00 до 16:00</i>"
+        caption = "<b>🕒 Выберите время выдачи заказа:\n\nВыдача осуществляется с 10:00 до 16:00.</b>"
         await edit_media_message(user_id, last_msg_id, CART_BANNER, caption, kb, context)
 
-    # ЭКРАН "ОТЛОЖИТЬ"
     elif data == "time_postpone":
         await query.answer()
         kb = InlineKeyboardMarkup([
@@ -654,7 +659,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         caption = "<b>🕒 К какому времени собрать ваш заказ?</b>"
         await edit_media_message(user_id, last_msg_id, CART_BANNER, caption, kb, context)
 
-    # ЭКРАН "СВОЕ ВРЕМЯ"
     elif data == "time_custom":
         await query.answer()
         context.user_data['user_state'] = 'WAITING_CUSTOM_TIME'
@@ -662,28 +666,37 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         caption = "<b>✍️ Пожалуйста, напишите желаемое время выдачи прямо сюда, в чат (например: 14:45):</b>"
         await edit_media_message(user_id, last_msg_id, CART_BANNER, caption, kb, context)
 
-    # ОБРАБОТКА ВЫБРАННОГО ВРЕМЕНИ
+    # ОБРАБОТКА ВЫБРАННОГО ВРЕМЕНИ И СКИДКИ
     elif data.startswith("timeval_"):
-        await query.answer()
         selected_time = data.split("_")[1]
         _, base_total, _ = get_order_summary(user_id)
         
-        # ЛОГИКА СКИДКИ
         if selected_time == "discount":
-            final_total = int(base_total * 0.8) # Минус 20%
+            current_hour = (datetime.utcnow().hour + 5) % 24 
+            if current_hour != 16:
+                await query.answer("⚠️ Скидка 20% действует строго с 16:00 до 17:00!", show_alert=True)
+                return
+                
+            final_total = int(base_total * 0.8)
             time_str = "16:00 - 17:00 (со скидкой 20%)"
         else:
             final_total = base_total
             time_str = selected_time
 
+        await query.answer()
+
         context.user_data['pickup_time'] = time_str
-        context.user_data['final_total'] = final_total # Сохраняем итоговую сумму
+        context.user_data['final_total'] = final_total 
         
         click_url = f"https://my.click.uz/services/pay/?service_id={CLICK_SERVICE_ID}&merchant_id={CLICK_MERCHANT_ID}&amount={final_total}"
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("💳 Оплатить через Click", url=click_url)], [InlineKeyboardButton("✅ Оплата завершена", callback_data="paid_order")]])
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💳 Оплатить через Click", url=click_url)], 
+            [InlineKeyboardButton("✅ Оплата завершена", callback_data="paid_order")],
+            [InlineKeyboardButton("🔙 Назад", callback_data="select_time")]
+        ])
         
         formatted_total = f"{final_total:,}".replace(",", " ")
-        caption = f"<b>🧾 Счет сформирован</b>\n\n<b>Сумма к оплате:</b> {formatted_total} сум\n<b>Время выдачи:</b> {time_str}\n\nПожалуйста, перейдите по ссылке для оплаты."
+        caption = f"<b>🧾 Счет сформирован\n\nСумма к оплате: {formatted_total} сум\nВремя выдачи: {time_str}\n\nПожалуйста, перейдите по ссылке для оплаты.</b>"
         
         try: await context.bot.delete_message(chat_id=user_id, message_id=last_msg_id)
         except: pass
@@ -703,7 +716,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         final_total = context.user_data.get('final_total', base_total)
         pickup_time = context.user_data.get('pickup_time', 'В очереди')
         
-        # Если была скидка, дописываем это в состав для Excel
         if "со скидкой 20%" in pickup_time:
             items_str += " | ПРИМЕНЕНА СКИДКА 20%"
             
@@ -714,7 +726,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if query.from_user.last_name: customer_name += f" {query.from_user.last_name}"
         username = f" (@{query.from_user.username})" if query.from_user.username else ""
         
-        text = f"✅ <b>Заказ принят в работу!</b>\n\n<b>Ваш заказ:</b>\n{items_text}\n\n<b>Место выдачи:</b> 4 этаж\n<b>Время выдачи:</b> {pickup_time}\n\nСпасибо!"
+        text = f"<b>✅ Заказ принят в работу!\n\nВаш заказ:\n{items_text}\n\nМесто выдачи: 4 этаж, кухня (Столовая)\nВремя выдачи: {pickup_time}\n\nСпасибо!</b>"
         try: await context.bot.delete_message(chat_id=user_id, message_id=last_msg_id)
         except: pass
         await context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML')
@@ -722,7 +734,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if ADMIN_ID:
             user = get_user_db(user_id)
             formatted_total = f"{final_total:,}".replace(",", " ")
-            admin_text = f"🚨 <b>Новый заказ!</b>\n<b>Имя:</b> {customer_name}{username}\n<b>Тел:</b> {user[1]}\n<b>Время выдачи:</b> {pickup_time}\n<b>Сумма:</b> {formatted_total} сум\n\n<b>Состав:</b>\n{items_text}"
+            admin_text = f"<b>🚨 Новый заказ!\nИмя: {customer_name}{username}\nТел: {user[1]}\nВремя выдачи: {pickup_time}\nСумма: {formatted_total} сум\n\nСостав:\n{items_text}</b>"
             try: await context.bot.send_message(chat_id=ADMIN_ID, text=admin_text, parse_mode='HTML')
             except: pass
 
@@ -742,7 +754,7 @@ async def main():
     app_bot.add_handler(CommandHandler("admin", admin_command))
     app_bot.add_handler(CommandHandler("myid", myid_command)) 
     app_bot.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text)) # Обработка текста для Своего времени
+    app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text)) 
     app_bot.add_handler(MessageHandler(filters.CONTACT, handle_contact))
     app_bot.add_handler(CallbackQueryHandler(button_handler))
     app = web.Application()
