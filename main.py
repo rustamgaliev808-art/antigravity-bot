@@ -36,7 +36,6 @@ CLICK_SERVICE_ID = "52528"
 CLICK_MERCHANT_ID = "20421"
 QR_FILE_NAME = "qr.jpg"
 
-# Профессиональные изображения для баннеров
 MAIN_BANNER = "https://images.unsplash.com/photo-1498837167922-41cfa6f318ba?q=80&w=1200&auto=format&fit=crop"
 CART_BANNER = "https://images.unsplash.com/photo-1556742044-3c52d6e88c62?q=80&w=1200&auto=format&fit=crop"
 LUNCH_BANNER = "https://images.unsplash.com/photo-1543339308-43e59d6b73a6?q=80&w=1200&auto=format&fit=crop"
@@ -47,8 +46,8 @@ try:
 except (ValueError, TypeError):
     ADMIN_ID = None
 
-# Версия 16 - Заказ в 1 клик, фиксированные напитки, полный состав в чеке
-DB_NAME = 'delivery_bot_v16.db'
+# Версия 17 - Выбор времени, своя дата, скидка 20%
+DB_NAME = 'delivery_bot_v17.db'
 menu_active = True
 
 # ==================== ДАННЫЕ МЕНЮ ====================
@@ -85,25 +84,18 @@ DEFAULT_ITEMS = [
     ('fresh_drinks', 'Морковно-яблочный фреш', 'Витаминный заряд (250 мл).', 30000, ''),
     ('fresh_drinks', 'Фреш Детокс', 'Свекла, яблоко, морковь (250 мл).', 32000, ''),
 
-    # --- ФИКСИРОВАННЫЕ КОМПЛЕКСЫ ПО ДНЯМ НЕДЕЛИ ---
-    
-    # ПОНЕДЕЛЬНИК (Шербет)
     ('mon', '🥩 Жаркое + Салат + Шербет', 'Сытное жаркое из говядины, витаминный салат и Шербет.', 62000, ''),
     ('mon', '🍗 Курица Карри + Салат + Шербет', 'Курица карри (рис и пюре), витаминный салат и Шербет.', 58000, ''),
     
-    # ВТОРНИК (Айс-ти)
     ('tue', '🥩 Говядина с овощами + Салат + Айс-ти', 'Сочная говядина (рис/гречка), Французский салат и Айс-ти.', 62000, ''),
     ('tue', '🍗 Куриные котлеты + Салат + Айс-ти', 'Куриные котлеты (рис/гречка), Французский салат и Айс-ти.', 58000, ''),
     
-    # СРЕДА (Шербет)
     ('wed', '🥩 Бефстроганов + Салат + Шербет', 'Бефстроганов (пюре/рис/карт.), Овощной салат и Шербет.', 62000, ''),
     ('wed', '🍗 Отбивная + Салат + Шербет', 'Отбивная с сыром (пюре/рис/карт.), Овощной салат и Шербет.', 58000, ''),
     
-    # ЧЕТВЕРГ (Айс-ти)
     ('thu', '🥩 Плов + Ачик-чучук + Айс-ти', 'Плов, салат Ачик-чучук (или соленья) и Айс-ти.', 62000, ''),
     ('thu', '🍗 Куриный Ган-пан + Салат + Айс-ти', 'Куриный Ган-пан (пюре/перловка), Ачик-чучук и Айс-ти.', 58000, ''),
     
-    # ПЯТНИЦА (Шербет)
     ('fri', '🥩 Гуляш + Салат Греческий + Шербет', 'Сытный гуляш (рис/гречка/овощи), Греческий салат и Шербет.', 62000, ''),
     ('fri', '🍗 Казан-кебаб + Салат + Шербет', 'Куриный казан-кебаб (рис/гречка/овощи), Греческий салат и Шербет.', 58000, '')
 ]
@@ -245,7 +237,8 @@ def get_order_summary(user_id):
     for item_id, data in cart.items():
         name, unit_price, cnt = data['name'], data['price'], data['count']
         total_price = unit_price * cnt
-        formatted_lines.append(f"• {name} x{cnt} — {total_price:,} сум".replace(",", " "))
+        # ЖИРНЫЙ ШРИФТ В КОРЗИНЕ
+        formatted_lines.append(f"<b>• {name}</b> x{cnt} — <b>{total_price:,} сум</b>".replace(",", " "))
         short_lines.append(f"{name} x{cnt}")
         total += total_price
     return "\n".join(formatted_lines), total, ", ".join(short_lines)
@@ -275,7 +268,6 @@ def get_week_menu_keyboard():
         [InlineKeyboardButton("🔙 Назад", callback_data="home")]
     ])
 
-# ==================== УНИВЕРСАЛЬНАЯ КЛАВИАТУРА ДЛЯ ВСЕХ БЛЮД ====================
 def get_category_list_keyboard(user_id, cat_id, items):
     keyboard = []
     cart = get_cart_db(user_id)
@@ -284,10 +276,8 @@ def get_category_list_keyboard(user_id, cat_id, items):
         item_id = str(item['id'])
         display_name = item['name']
         
-        # Строка-заголовок
         keyboard.append([InlineKeyboardButton(f"🍽 {display_name}", callback_data="ignore")])
         
-        # Строка с управлением количеством (работает для ВСЕХ позиций одинаково)
         count = cart.get(item_id, {}).get('count', 0)
         if count > 0:
             keyboard.append([
@@ -412,41 +402,69 @@ async def run_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['admin_state'] = None
     await msg.edit_text(f"✅ Рассылка завершена!\nУспешно отправлено: {count} пользователям.")
 
-async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    state = context.user_data.get('admin_state')
-    if text.lower() == 'отмена':
-        context.user_data['admin_state'] = None
-        await update.message.reply_text("❌ Отменено.")
-        return True
-    if state == 'WAITING_BROADCAST':
-        await run_broadcast(update, context)
-        return True
-    elif state == 'WAITING_DISH_NAME':
-        context.user_data['new_dish']['name'] = text
-        context.user_data['admin_state'] = 'WAITING_DISH_DESC'
-        await update.message.reply_text("✏️ Введите описание блюда:")
-        return True
-    elif state == 'WAITING_DISH_DESC':
-        context.user_data['new_dish']['desc'] = text
-        context.user_data['admin_state'] = 'WAITING_DISH_PRICE'
-        await update.message.reply_text("💰 Введите цену (только цифры):")
-        return True
-    elif state == 'WAITING_DISH_PRICE':
-        if not text.isdigit():
-            await update.message.reply_text("⚠️ Только цифры.")
-            return True
-        context.user_data['new_dish']['price'] = int(text)
-        context.user_data['admin_state'] = 'WAITING_DISH_PHOTO'
-        await update.message.reply_text("🖼 Отправьте ссылку или картинку:")
-        return True
-    elif state == 'WAITING_DISH_PHOTO':
-        context.user_data['new_dish']['photo'] = text 
-        save_new_dish(context.user_data['new_dish'])
-        context.user_data['admin_state'] = None
-        await update.message.reply_text("✅ Блюдо добавлено!")
-        return True
-    return False
+# === ОБРАБОТЧИК ТЕКСТА (ВКЛЮЧАЯ "СВОЕ ВРЕМЯ") ===
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
+    # 1. Проверяем, ждет ли бот свое время от клиента
+    state = context.user_data.get('user_state')
+    if state == 'WAITING_CUSTOM_TIME':
+        time_str = update.message.text
+        context.user_data['user_state'] = None
+        context.user_data['pickup_time'] = time_str
+        
+        _, base_total, _ = get_order_summary(user_id)
+        context.user_data['final_total'] = base_total
+        
+        click_url = f"https://my.click.uz/services/pay/?service_id={CLICK_SERVICE_ID}&merchant_id={CLICK_MERCHANT_ID}&amount={base_total}"
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("💳 Оплатить через Click", url=click_url)], [InlineKeyboardButton("✅ Оплата завершена", callback_data="paid_order")]])
+        
+        formatted_total = f"{base_total:,}".replace(",", " ")
+        caption = f"<b>🧾 Счет сформирован</b>\n\n<b>Сумма к оплате:</b> {formatted_total} сум\n<b>Время выдачи:</b> {time_str}\n\nПожалуйста, перейдите по ссылке для оплаты."
+        
+        try:
+            msg = await update.message.reply_photo(photo=CART_BANNER, caption=caption, reply_markup=kb, parse_mode='HTML')
+            context.user_data['last_msg_id'] = msg.message_id
+        except Exception:
+            msg = await update.message.reply_text(text=caption, reply_markup=kb, parse_mode='HTML')
+            context.user_data['last_msg_id'] = msg.message_id
+        return
+
+    # 2. Логика админа
+    if ADMIN_ID and user_id == ADMIN_ID:
+        text = update.message.text
+        admin_state = context.user_data.get('admin_state')
+        if text.lower() == 'отмена':
+            context.user_data['admin_state'] = None
+            await update.message.reply_text("❌ Отменено.")
+            return
+        if admin_state == 'WAITING_BROADCAST':
+            await run_broadcast(update, context)
+            return
+        elif admin_state == 'WAITING_DISH_NAME':
+            context.user_data['new_dish']['name'] = text
+            context.user_data['admin_state'] = 'WAITING_DISH_DESC'
+            await update.message.reply_text("✏️ Введите описание блюда:")
+            return
+        elif admin_state == 'WAITING_DISH_DESC':
+            context.user_data['new_dish']['desc'] = text
+            context.user_data['admin_state'] = 'WAITING_DISH_PRICE'
+            await update.message.reply_text("💰 Введите цену (только цифры):")
+            return
+        elif admin_state == 'WAITING_DISH_PRICE':
+            if not text.isdigit():
+                await update.message.reply_text("⚠️ Только цифры.")
+                return
+            context.user_data['new_dish']['price'] = int(text)
+            context.user_data['admin_state'] = 'WAITING_DISH_PHOTO'
+            await update.message.reply_text("🖼 Отправьте ссылку или картинку:")
+            return
+        elif admin_state == 'WAITING_DISH_PHOTO':
+            context.user_data['new_dish']['photo'] = text 
+            save_new_dish(context.user_data['new_dish'])
+            context.user_data['admin_state'] = None
+            await update.message.reply_text("✅ Блюдо добавлено!")
+            return
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -460,11 +478,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_new_dish(context.user_data['new_dish'])
             context.user_data['admin_state'] = None
             await update.message.reply_text("✅ Блюдо добавлено!")
-
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if ADMIN_ID and user_id == ADMIN_ID:
-        if await handle_admin_text(update, context): return
 
 # ==================== ОСНОВНОЙ ОБРАБОТЧИК КНОПОК ====================
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -538,6 +551,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # НАВИГАЦИЯ
     if data == "home":
         await query.answer()
+        context.user_data['user_state'] = None # Сброс состояния ввода
         await edit_media_message(user_id, last_msg_id, MAIN_BANNER, "<b>Главное меню</b>\n\nВыберите нужный раздел для заказа.", get_main_keyboard(), context)
 
     elif data == "nav_drinks":
@@ -558,7 +572,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer()
         data = f"cat_{cat_id}" 
 
-    # ПРОСМОТР КАТЕГОРИЙ И ДОБАВЛЕНИЕ (ОБЩЕЕ ДЛЯ ВСЕХ)
+    # ПРОСМОТР КАТЕГОРИЙ И ДОБАВЛЕНИЕ
     if data.startswith("cat_"):
         if data != "lunch_today": 
             try: await query.answer()
@@ -569,7 +583,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not items or not cat_info: return
         caption = f"<b>{cat_info['name']}</b>\n\n"
         for item in items:
-            price_str = f" — {item['price']:,} сум".replace(",", " ") if item['price'] > 0 else ""
+            price_str = f" — <b>{item['price']:,} сум</b>".replace(",", " ") if item['price'] > 0 else ""
             caption += f"<b>{item['name']}</b>{price_str}\n<i>{item['description']}</i>\n\n"
         await edit_media_message(user_id, last_msg_id, cat_info['banner'], caption, get_category_list_keyboard(user_id, cat_id, items), context)
 
@@ -581,7 +595,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         item = next((i for i in items if str(i['id']) == item_id), None)
         if not item: return
         new_count = get_cart_db(user_id).get(item_id, {}).get('count', 0) + 1
-        # Item['name'] содержит полное название с салатом и напитком
         update_cart_db(user_id, item_id, item['name'], item['price'], new_count)
         await query.answer()
         await context.bot.edit_message_reply_markup(chat_id=user_id, message_id=last_msg_id, reply_markup=get_category_list_keyboard(user_id, cat_id, items))
@@ -600,42 +613,78 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer()
             await context.bot.edit_message_reply_markup(chat_id=user_id, message_id=last_msg_id, reply_markup=get_category_list_keyboard(user_id, cat_id, items))
 
-    # КОРЗИНА И ВЫБОР ВРЕМЕНИ
+    # КОРЗИНА И НОВЫЙ ВЫБОР ВРЕМЕНИ
     elif data == "cart_list":
         await query.answer()
+        context.user_data['user_state'] = None # Сброс
         items_text, total, _ = get_order_summary(user_id)
         if not items_text:
-            await edit_media_message(user_id, last_msg_id, CART_BANNER, "<b>Корзина пуста.</b>", get_main_keyboard(), context)
+            await edit_media_message(user_id, last_msg_id, CART_BANNER, "<b>Ваша корзина пуста.</b>", get_main_keyboard(), context)
             return
-        caption = f"<b>Ваш заказ:</b>\n\n{items_text}\n\n<b>Итого:</b> {total:,} сум\n\nПерейти к оформлению?".replace(",", " ")
+        caption = f"<b>Ваш заказ:</b>\n\n{items_text}\n\n<b>Итого: {total:,} сум</b>\n\nПерейти к оформлению?".replace(",", " ")
         kb = [[InlineKeyboardButton("💳 Оформить заказ", callback_data="select_time")], [InlineKeyboardButton("🗑 Очистить корзину", callback_data="cancel_order"), InlineKeyboardButton("🔙 В меню", callback_data="home")]]
         await edit_media_message(user_id, last_msg_id, CART_BANNER, caption, InlineKeyboardMarkup(kb), context)
 
     elif data == "cancel_order":
         await query.answer("Очищено")
         clear_cart_db(user_id)
-        await edit_media_message(user_id, last_msg_id, MAIN_BANNER, "Корзина очищена.", get_main_keyboard(), context)
+        await edit_media_message(user_id, last_msg_id, MAIN_BANNER, "<b>Корзина очищена.</b>", get_main_keyboard(), context)
 
     elif data == "select_time":
         await query.answer()
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("12:00", callback_data="time_12:00"), InlineKeyboardButton("12:30", callback_data="time_12:30")],
-            [InlineKeyboardButton("13:00", callback_data="time_13:00"), InlineKeyboardButton("13:30", callback_data="time_13:30")],
-            [InlineKeyboardButton("🔜 Как будет готово", callback_data="time_ASAP")],
-            [InlineKeyboardButton("🔙 Назад", callback_data="cart_list")]
+            [InlineKeyboardButton("🏃 Забрать сейчас", callback_data="timeval_Сейчас (В порядке очереди)")],
+            [InlineKeyboardButton("🕒 Отложить (выбрать время)", callback_data="time_postpone")],
+            [InlineKeyboardButton("🔥 Скидка 20% (16:00 - 17:00)", callback_data="timeval_discount")],
+            [InlineKeyboardButton("✍️ Указать свое время", callback_data="time_custom")],
+            [InlineKeyboardButton("🔙 Назад в корзину", callback_data="cart_list")]
         ])
-        await edit_media_message(user_id, last_msg_id, CART_BANNER, "<b>Выберите время выдачи:</b>\nМы заранее соберем заказ.", kb, context)
+        caption = "<b>🕒 Выберите время выдачи заказа:</b>\n<i>Стандартное время работы: с 10:00 до 16:00</i>"
+        await edit_media_message(user_id, last_msg_id, CART_BANNER, caption, kb, context)
 
-    elif data.startswith("time_"):
+    # ЭКРАН "ОТЛОЖИТЬ"
+    elif data == "time_postpone":
+        await query.answer()
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("11:00", callback_data="timeval_11:00"), InlineKeyboardButton("12:00", callback_data="timeval_12:00")],
+            [InlineKeyboardButton("13:00", callback_data="timeval_13:00"), InlineKeyboardButton("14:00", callback_data="timeval_14:00")],
+            [InlineKeyboardButton("15:00", callback_data="timeval_15:00"), InlineKeyboardButton("16:00", callback_data="timeval_16:00")],
+            [InlineKeyboardButton("🔙 Назад", callback_data="select_time")]
+        ])
+        caption = "<b>🕒 К какому времени собрать ваш заказ?</b>"
+        await edit_media_message(user_id, last_msg_id, CART_BANNER, caption, kb, context)
+
+    # ЭКРАН "СВОЕ ВРЕМЯ"
+    elif data == "time_custom":
+        await query.answer()
+        context.user_data['user_state'] = 'WAITING_CUSTOM_TIME'
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отмена", callback_data="select_time")]])
+        caption = "<b>✍️ Пожалуйста, напишите желаемое время выдачи прямо сюда, в чат (например: 14:45):</b>"
+        await edit_media_message(user_id, last_msg_id, CART_BANNER, caption, kb, context)
+
+    # ОБРАБОТКА ВЫБРАННОГО ВРЕМЕНИ
+    elif data.startswith("timeval_"):
         await query.answer()
         selected_time = data.split("_")[1]
-        if selected_time == "ASAP": selected_time = "Как можно скорее"
-        context.user_data['pickup_time'] = selected_time
-        _, total, _ = get_order_summary(user_id)
-        click_url = f"https://my.click.uz/services/pay/?service_id={CLICK_SERVICE_ID}&merchant_id={CLICK_MERCHANT_ID}&amount={total}"
+        _, base_total, _ = get_order_summary(user_id)
+        
+        # ЛОГИКА СКИДКИ
+        if selected_time == "discount":
+            final_total = int(base_total * 0.8) # Минус 20%
+            time_str = "16:00 - 17:00 (со скидкой 20%)"
+        else:
+            final_total = base_total
+            time_str = selected_time
+
+        context.user_data['pickup_time'] = time_str
+        context.user_data['final_total'] = final_total # Сохраняем итоговую сумму
+        
+        click_url = f"https://my.click.uz/services/pay/?service_id={CLICK_SERVICE_ID}&merchant_id={CLICK_MERCHANT_ID}&amount={final_total}"
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("💳 Оплатить через Click", url=click_url)], [InlineKeyboardButton("✅ Оплата завершена", callback_data="paid_order")]])
-        formatted_total = f"{total:,}".replace(",", " ")
-        caption = f"<b>Счет сформирован</b>\nСумма: {formatted_total} сум\nВремя выдачи: {selected_time}\n\nПерейдите по ссылке для оплаты."
+        
+        formatted_total = f"{final_total:,}".replace(",", " ")
+        caption = f"<b>🧾 Счет сформирован</b>\n\n<b>Сумма к оплате:</b> {formatted_total} сум\n<b>Время выдачи:</b> {time_str}\n\nПожалуйста, перейдите по ссылке для оплаты."
+        
         try: await context.bot.delete_message(chat_id=user_id, message_id=last_msg_id)
         except: pass
         try:
@@ -648,22 +697,32 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "paid_order":
         await query.answer()
-        items_text, total, items_str = get_order_summary(user_id)
+        items_text, base_total, items_str = get_order_summary(user_id)
         if not items_text: return
-        save_order_history(user_id, items_str, total)
-        clear_cart_db(user_id)
+        
+        final_total = context.user_data.get('final_total', base_total)
         pickup_time = context.user_data.get('pickup_time', 'В очереди')
+        
+        # Если была скидка, дописываем это в состав для Excel
+        if "со скидкой 20%" in pickup_time:
+            items_str += " | ПРИМЕНЕНА СКИДКА 20%"
+            
+        save_order_history(user_id, items_str, final_total)
+        clear_cart_db(user_id)
+        
         customer_name = query.from_user.first_name
         if query.from_user.last_name: customer_name += f" {query.from_user.last_name}"
         username = f" (@{query.from_user.username})" if query.from_user.username else ""
-        text = f"✅ <b>Заказ принят в работу!</b>\n\n<b>Состав:</b>\n{items_text}\n\nМесто выдачи: 4 этаж\nВремя: {pickup_time}\n\nСпасибо за заказ."
+        
+        text = f"✅ <b>Заказ принят в работу!</b>\n\n<b>Ваш заказ:</b>\n{items_text}\n\n<b>Место выдачи:</b> 4 этаж\n<b>Время выдачи:</b> {pickup_time}\n\nСпасибо!"
         try: await context.bot.delete_message(chat_id=user_id, message_id=last_msg_id)
         except: pass
         await context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML')
+        
         if ADMIN_ID:
             user = get_user_db(user_id)
-            formatted_total = f"{total:,}".replace(",", " ")
-            admin_text = f"🚨 <b>Новый заказ!</b>\nИмя: {customer_name}{username}\nТел: {user[1]}\nВремя: {pickup_time}\nСумма: {formatted_total} сум\n\n<b>Состав:</b>\n{items_text}"
+            formatted_total = f"{final_total:,}".replace(",", " ")
+            admin_text = f"🚨 <b>Новый заказ!</b>\n<b>Имя:</b> {customer_name}{username}\n<b>Тел:</b> {user[1]}\n<b>Время выдачи:</b> {pickup_time}\n<b>Сумма:</b> {formatted_total} сум\n\n<b>Состав:</b>\n{items_text}"
             try: await context.bot.send_message(chat_id=ADMIN_ID, text=admin_text, parse_mode='HTML')
             except: pass
 
@@ -683,7 +742,7 @@ async def main():
     app_bot.add_handler(CommandHandler("admin", admin_command))
     app_bot.add_handler(CommandHandler("myid", myid_command)) 
     app_bot.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text)) # Обработка текста для Своего времени
     app_bot.add_handler(MessageHandler(filters.CONTACT, handle_contact))
     app_bot.add_handler(CallbackQueryHandler(button_handler))
     app = web.Application()
