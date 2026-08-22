@@ -47,7 +47,8 @@ try:
 except (ValueError, TypeError):
     ADMIN_ID = None
 
-DB_NAME = 'delivery_bot_v15.db'
+# Версия 16 - Заказ в 1 клик, фиксированные напитки, полный состав в чеке
+DB_NAME = 'delivery_bot_v16.db'
 menu_active = True
 
 # ==================== ДАННЫЕ МЕНЮ ====================
@@ -84,20 +85,27 @@ DEFAULT_ITEMS = [
     ('fresh_drinks', 'Морковно-яблочный фреш', 'Витаминный заряд (250 мл).', 30000, ''),
     ('fresh_drinks', 'Фреш Детокс', 'Свекла, яблоко, морковь (250 мл).', 32000, ''),
 
-    ('mon', '🥩 Жаркое с картофелем', 'Сытное домашнее жаркое из говядины с картофелем и витаминным салатом.', 62000, ''),
-    ('mon', '🍗 Курица в соусе карри', 'Нежная курица в соусе карри. Подается с рисом, пюре и витаминным салатом.', 58000, ''),
+    # --- ФИКСИРОВАННЫЕ КОМПЛЕКСЫ ПО ДНЯМ НЕДЕЛИ ---
     
-    ('tue', '🥩 Говядина с овощами', 'Сочная говядина с овощами (гарнир: рис/гречка) и Французским салатом.', 62000, ''),
-    ('tue', '🍗 Куриные котлеты', 'Домашние куриные котлеты (гарнир: рис/гречка) и Французский салат.', 58000, ''),
+    # ПОНЕДЕЛЬНИК (Шербет)
+    ('mon', '🥩 Жаркое + Салат + Шербет', 'Сытное жаркое из говядины, витаминный салат и Шербет.', 62000, ''),
+    ('mon', '🍗 Курица Карри + Салат + Шербет', 'Курица карри (рис и пюре), витаминный салат и Шербет.', 58000, ''),
     
-    ('wed', '🥩 Бефстроганов', 'Классический бефстроганов (пюре/рис/гречка/картофель) и Овощной салат.', 62000, ''),
-    ('wed', '🍗 Куриная отбивная', 'Отбивная с томатом и сыром (пюре/рис/гречка/картофель) и Овощной салат.', 58000, ''),
+    # ВТОРНИК (Айс-ти)
+    ('tue', '🥩 Говядина с овощами + Салат + Айс-ти', 'Сочная говядина (рис/гречка), Французский салат и Айс-ти.', 62000, ''),
+    ('tue', '🍗 Куриные котлеты + Салат + Айс-ти', 'Куриные котлеты (рис/гречка), Французский салат и Айс-ти.', 58000, ''),
     
-    ('thu', '🥩 Плов из говядины', 'Традиционный плов, подается с салатом Ачик-чучук или соленьями.', 62000, ''),
-    ('thu', '🍗 Куриный Ган-пан', 'Куриный Ган-пан (на выбор: пюре/перловка) с салатом Ачик-чучук или соленьями.', 58000, ''),
+    # СРЕДА (Шербет)
+    ('wed', '🥩 Бефстроганов + Салат + Шербет', 'Бефстроганов (пюре/рис/карт.), Овощной салат и Шербет.', 62000, ''),
+    ('wed', '🍗 Отбивная + Салат + Шербет', 'Отбивная с сыром (пюре/рис/карт.), Овощной салат и Шербет.', 58000, ''),
     
-    ('fri', '🥩 Гуляш из говядины', 'Сытный гуляш (на выбор: рис/гречка/овощи) и салат Греческий.', 62000, ''),
-    ('fri', '🍗 Куриный казан-кебаб', 'Куриный казан-кебаб (на выбор: рис/гречка/овощи) и салат Греческий.', 58000, '')
+    # ЧЕТВЕРГ (Айс-ти)
+    ('thu', '🥩 Плов + Ачик-чучук + Айс-ти', 'Плов, салат Ачик-чучук (или соленья) и Айс-ти.', 62000, ''),
+    ('thu', '🍗 Куриный Ган-пан + Салат + Айс-ти', 'Куриный Ган-пан (пюре/перловка), Ачик-чучук и Айс-ти.', 58000, ''),
+    
+    # ПЯТНИЦА (Шербет)
+    ('fri', '🥩 Гуляш + Салат Греческий + Шербет', 'Сытный гуляш (рис/гречка/овощи), Греческий салат и Шербет.', 62000, ''),
+    ('fri', '🍗 Казан-кебаб + Салат + Шербет', 'Куриный казан-кебаб (рис/гречка/овощи), Греческий салат и Шербет.', 58000, '')
 ]
 
 # ==================== РАБОТА С БД ====================
@@ -267,6 +275,7 @@ def get_week_menu_keyboard():
         [InlineKeyboardButton("🔙 Назад", callback_data="home")]
     ])
 
+# ==================== УНИВЕРСАЛЬНАЯ КЛАВИАТУРА ДЛЯ ВСЕХ БЛЮД ====================
 def get_category_list_keyboard(user_id, cat_id, items):
     keyboard = []
     cart = get_cart_db(user_id)
@@ -274,33 +283,20 @@ def get_category_list_keyboard(user_id, cat_id, items):
     for item in items:
         item_id = str(item['id'])
         display_name = item['name']
-        is_complex = cat_id in ['mon', 'tue', 'wed', 'thu', 'fri']
         
         # Строка-заголовок
         keyboard.append([InlineKeyboardButton(f"🍽 {display_name}", callback_data="ignore")])
         
-        if is_complex:
-            # Считаем количество комплексов с напитками в корзине
-            count_ice = cart.get(f"{item_id}_icetea", {}).get('count', 0)
-            count_sherbet = cart.get(f"{item_id}_sherbet", {}).get('count', 0)
-            total_count = count_ice + count_sherbet
-            
-            # ВАЖНО: Если выбрано, показываем количество прямо на кнопке!
-            if total_count == 0:
-                keyboard.append([InlineKeyboardButton("🍹 Выбрать напиток ➡️", callback_data=f"drinksel_{item_id}")])
-            else:
-                keyboard.append([InlineKeyboardButton(f"✅ В корзине: {total_count} шт (Настроить) ➡️", callback_data=f"drinksel_{item_id}")])
+        # Строка с управлением количеством (работает для ВСЕХ позиций одинаково)
+        count = cart.get(item_id, {}).get('count', 0)
+        if count > 0:
+            keyboard.append([
+                InlineKeyboardButton("➖", callback_data=f"list_rm_{cat_id}_{item_id}"),
+                InlineKeyboardButton(f"{count} шт", callback_data="ignore"),
+                InlineKeyboardButton("➕", callback_data=f"list_add_{cat_id}_{item_id}")
+            ])
         else:
-            # Обычные товары
-            count = cart.get(item_id, {}).get('count', 0)
-            if count > 0:
-                keyboard.append([
-                    InlineKeyboardButton("➖", callback_data=f"list_rm_{cat_id}_{item_id}"),
-                    InlineKeyboardButton(f"{count} шт", callback_data="ignore"),
-                    InlineKeyboardButton("➕", callback_data=f"list_add_{cat_id}_{item_id}")
-                ])
-            else:
-                keyboard.append([InlineKeyboardButton("Добавить", callback_data=f"list_add_{cat_id}_{item_id}")])
+            keyboard.append([InlineKeyboardButton("Добавить", callback_data=f"list_add_{cat_id}_{item_id}")])
 
     back_data = "home"
     if cat_id in ['hot_drinks', 'cold_drinks', 'fresh_drinks']: back_data = "nav_drinks"
@@ -381,11 +377,11 @@ async def post_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     weekday = datetime.now().weekday()
     posts_by_day = {
-        0: ("<b>Понедельник — продуктивное начало!</b>\n\nСегодня в комплексе: <b>Салат витаминный</b>.\n\n<b>Горячее и напиток на выбор:</b>\n• Жаркое с картофелем (Айс-ти/Шербет) — <i>62 000 сум</i>\n• Курица в карри соусе (Айс-ти/Шербет) — <i>58 000 сум</i>", MONDAY_BANNER),
-        1: ("<b>Вторник — время вкусного обеда!</b>\n\nСегодня в комплексе: <b>Салат Французский</b>.\n\n<b>Горячее и напиток на выбор:</b>\n• Говядина с овощами (Айс-ти/Шербет) — <i>62 000 сум</i>\n• Куриные котлеты (Айс-ти/Шербет) — <i>58 000 сум</i>", LUNCH_BANNER),
-        2: ("<b>Среда — экватор недели!</b>\n\nСегодня в комплексе: <b>Овощной салат</b>.\n\n<b>Горячее и напиток на выбор:</b>\n• Бефстроганов (Айс-ти/Шербет) — <i>62 000 сум</i>\n• Куриная отбивная (Айс-ти/Шербет) — <i>58 000 сум</i>", LUNCH_BANNER),
-        3: ("<b>Четверг — день Плова!</b>\n\nСегодня в комплексе: <b>Салат Ачик-чучук или соленья</b>.\n\n<b>Горячее и напиток на выбор:</b>\n• Плов из говядины (Айс-ти/Шербет) — <i>62 000 сум</i>\n• Куриный Ган-пан (Айс-ти/Шербет) — <i>58 000 сум</i>", LUNCH_BANNER),
-        4: ("<b>Пятница — завершаем неделю вкусно!</b>\n\nСегодня в комплексе: <b>Салат Греческий</b>.\n\n<b>Горячее и напиток на выбор:</b>\n• Гуляш из говядины (Айс-ти/Шербет) — <i>62 000 сум</i>\n• Куриный казан-кебаб (Айс-ти/Шербет) — <i>58 000 сум</i>", LUNCH_BANNER)
+        0: ("<b>Понедельник — продуктивное начало!</b>\n\nВ комплекс уже включен <b>Витаминный салат</b> и <b>Шербет</b>!\n\n<b>На выбор:</b>\n• 🥩 Жаркое с картофелем — <i>62 000 сум</i>\n• 🍗 Курица Карри — <i>58 000 сум</i>", MONDAY_BANNER),
+        1: ("<b>Вторник — время вкусного обеда!</b>\n\nВ комплекс уже включен <b>Французский салат</b> и <b>Айс-ти</b>!\n\n<b>На выбор:</b>\n• 🥩 Говядина с овощами — <i>62 000 сум</i>\n• 🍗 Куриные котлеты — <i>58 000 сум</i>", LUNCH_BANNER),
+        2: ("<b>Среда — экватор недели!</b>\n\nВ комплекс уже включен <b>Овощной салат</b> и <b>Шербет</b>!\n\n<b>На выбор:</b>\n• 🥩 Бефстроганов — <i>62 000 сум</i>\n• 🍗 Куриная отбивная — <i>58 000 сум</i>", LUNCH_BANNER),
+        3: ("<b>Четверг — день Плова!</b>\n\nВ комплекс уже включен <b>Салат Ачик-чучук</b> и <b>Айс-ти</b>!\n\n<b>На выбор:</b>\n• 🥩 Плов из говядины — <i>62 000 сум</i>\n• 🍗 Куриный Ган-пан — <i>58 000 сум</i>", LUNCH_BANNER),
+        4: ("<b>Пятница — завершаем неделю вкусно!</b>\n\nВ комплекс уже включен <b>Греческий салат</b> и <b>Шербет</b>!\n\n<b>На выбор:</b>\n• 🥩 Гуляш из говядины — <i>62 000 сум</i>\n• 🍗 Куриный казан-кебаб — <i>58 000 сум</i>", LUNCH_BANNER)
     }
 
     if weekday not in posts_by_day:
@@ -482,94 +478,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer()
         return
 
-    # === ИСПРАВЛЕННЫЙ БЛОК: ВСПЛЫВАЮЩИЙ ЭКРАН ВЫБОРА НАПИТКА ===
-    if data.startswith("drinksel_"):
-        item_id = data.split("_")[1]
-        
-        conn = sqlite3.connect(DB_NAME)
-        cursor = conn.cursor()
-        # ИСПРАВЛЕНИЕ: Указано m.name, чтобы база не путалась
-        cursor.execute("SELECT m.name, m.cat_id, c.banner FROM menu_items m JOIN menu_categories c ON m.cat_id = c.id WHERE m.id = ?", (item_id,))
-        row = cursor.fetchone()
-        conn.close()
-        
-        if not row: return
-        item_name, cat_id, banner = row[0], row[1], row[2]
-
-        cart = get_cart_db(user_id)
-        count_ice = cart.get(f"{item_id}_icetea", {}).get('count', 0)
-        count_sherbet = cart.get(f"{item_id}_sherbet", {}).get('count', 0)
-
-        # Клавиатура "Всплывающего экрана" напитков
-        kb = [
-            [InlineKeyboardButton("🧊 С напитком: Айс-ти", callback_data="ignore")],
-            [
-                InlineKeyboardButton("➖", callback_data=f"rmcombo_{item_id}_icetea"),
-                InlineKeyboardButton(f"{count_ice} шт", callback_data="ignore"),
-                InlineKeyboardButton("➕", callback_data=f"addcombo_{item_id}_icetea")
-            ],
-            [InlineKeyboardButton("🍷 С напитком: Шербет", callback_data="ignore")],
-            [
-                InlineKeyboardButton("➖", callback_data=f"rmcombo_{item_id}_sherbet"),
-                InlineKeyboardButton(f"{count_sherbet} шт", callback_data="ignore"),
-                InlineKeyboardButton("➕", callback_data=f"addcombo_{item_id}_sherbet")
-            ],
-            [InlineKeyboardButton("🔙 Готово (Назад к меню)", callback_data=f"cat_{cat_id}")]
-        ]
-        
-        caption = f"<b>{item_name}</b>\n\nПожалуйста, выберите количество порций с нужным напитком:"
-        await edit_media_message(user_id, last_msg_id, banner, caption, InlineKeyboardMarkup(kb), context)
-        await query.answer()
-        return
-
-    elif data.startswith("addcombo_") or data.startswith("rmcombo_"):
-        parts = data.split("_")
-        action = parts[0]
-        item_id = parts[1]
-        drink_type = parts[2]
-        
-        conn = sqlite3.connect(DB_NAME)
-        cursor = conn.cursor()
-        cursor.execute("SELECT name, price, cat_id FROM menu_items WHERE id = ?", (item_id,))
-        row = cursor.fetchone()
-        conn.close()
-        if not row: return
-        
-        base_name, base_price, cat_id = row[0], row[1], row[2]
-        cart_item_id = f"{item_id}_{drink_type}"
-        drink_display = "Айс-ти" if drink_type == "icetea" else "Шербет"
-        
-        # Очищаем название для корзины (убираем лишние эмодзи)
-        clean_name = base_name.replace("▪️ ", "").replace("🥩 ", "").replace("🍗 ", "")
-        cart_item_name = f"{clean_name} (+ {drink_display})"
-        
-        cart = get_cart_db(user_id)
-        current_count = cart.get(cart_item_id, {}).get('count', 0)
-        
-        if action == "addcombo":
-            new_count = current_count + 1
-            update_cart_db(user_id, cart_item_id, cart_item_name, base_price, new_count)
-        else:
-            if current_count > 0:
-                new_count = current_count - 1
-                update_cart_db(user_id, cart_item_id, cart_item_name, base_price, new_count)
-                
-        cart = get_cart_db(user_id)
-        count_ice = cart.get(f"{item_id}_icetea", {}).get('count', 0)
-        count_sherbet = cart.get(f"{item_id}_sherbet", {}).get('count', 0)
-        
-        kb = [
-            [InlineKeyboardButton("🧊 С напитком: Айс-ти", callback_data="ignore")],
-            [InlineKeyboardButton("➖", callback_data=f"rmcombo_{item_id}_icetea"), InlineKeyboardButton(f"{count_ice} шт", callback_data="ignore"), InlineKeyboardButton("➕", callback_data=f"addcombo_{item_id}_icetea")],
-            [InlineKeyboardButton("🍷 С напитком: Шербет", callback_data="ignore")],
-            [InlineKeyboardButton("➖", callback_data=f"rmcombo_{item_id}_sherbet"), InlineKeyboardButton(f"{count_sherbet} шт", callback_data="ignore"), InlineKeyboardButton("➕", callback_data=f"addcombo_{item_id}_sherbet")],
-            [InlineKeyboardButton("🔙 Готово (Назад к меню)", callback_data=f"cat_{cat_id}")]
-        ]
-        try: await context.bot.edit_message_reply_markup(chat_id=user_id, message_id=last_msg_id, reply_markup=InlineKeyboardMarkup(kb))
-        except Exception: pass
-        await query.answer()
-        return
-
     # ВЕТКА АДМИНА
     if data.startswith("admin_"):
         if not ADMIN_ID or user_id != ADMIN_ID: return
@@ -650,7 +558,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer()
         data = f"cat_{cat_id}" 
 
-    # ПРОСМОТР КАТЕГОРИЙ (ВОЗВРАТ ИЗ ЭКРАНА НАПИТКОВ ПРОИСХОДИТ СЮДА)
+    # ПРОСМОТР КАТЕГОРИЙ И ДОБАВЛЕНИЕ (ОБЩЕЕ ДЛЯ ВСЕХ)
     if data.startswith("cat_"):
         if data != "lunch_today": 
             try: await query.answer()
@@ -665,7 +573,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption += f"<b>{item['name']}</b>{price_str}\n<i>{item['description']}</i>\n\n"
         await edit_media_message(user_id, last_msg_id, cat_info['banner'], caption, get_category_list_keyboard(user_id, cat_id, items), context)
 
-    # ДОБАВЛЕНИЕ И УДАЛЕНИЕ ИЗ СПИСКА (ОБЫЧНЫЕ ТОВАРЫ)
     elif data.startswith("list_add_"):
         parts = data.split("_")
         item_id = parts[-1]
@@ -674,6 +581,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         item = next((i for i in items if str(i['id']) == item_id), None)
         if not item: return
         new_count = get_cart_db(user_id).get(item_id, {}).get('count', 0) + 1
+        # Item['name'] содержит полное название с салатом и напитком
         update_cart_db(user_id, item_id, item['name'], item['price'], new_count)
         await query.answer()
         await context.bot.edit_message_reply_markup(chat_id=user_id, message_id=last_msg_id, reply_markup=get_category_list_keyboard(user_id, cat_id, items))
