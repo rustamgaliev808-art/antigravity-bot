@@ -31,10 +31,12 @@ TOKEN = os.getenv("BOT_TOKEN", "ВАШ_ТОКЕН")
 ADMIN_ID_STR = os.getenv("ADMIN_ID", "")
 CHANNEL_ID = os.getenv("CHANNEL_ID", "@your_channel")
 
+# Настройки для оплаты Click
 CLICK_SERVICE_ID = "52528"
 CLICK_MERCHANT_ID = "20421"
 QR_FILE_NAME = "qr.jpg"
 
+# Профессиональные изображения для баннеров
 MAIN_BANNER = "https://images.unsplash.com/photo-1498837167922-41cfa6f318ba?q=80&w=1200&auto=format&fit=crop"
 CART_BANNER = "https://images.unsplash.com/photo-1556742044-3c52d6e88c62?q=80&w=1200&auto=format&fit=crop"
 LUNCH_BANNER = "https://images.unsplash.com/photo-1543339308-43e59d6b73a6?q=80&w=1200&auto=format&fit=crop"
@@ -274,18 +276,22 @@ def get_category_list_keyboard(user_id, cat_id, items):
         display_name = item['name']
         is_complex = cat_id in ['mon', 'tue', 'wed', 'thu', 'fri']
         
+        # Строка-заголовок
         keyboard.append([InlineKeyboardButton(f"🍽 {display_name}", callback_data="ignore")])
         
         if is_complex:
+            # Считаем количество комплексов с напитками в корзине
             count_ice = cart.get(f"{item_id}_icetea", {}).get('count', 0)
             count_sherbet = cart.get(f"{item_id}_sherbet", {}).get('count', 0)
             total_count = count_ice + count_sherbet
             
+            # ВАЖНО: Если выбрано, показываем количество прямо на кнопке!
             if total_count == 0:
-                keyboard.append([InlineKeyboardButton("🍹 Выбрать напиток", callback_data=f"drinksel_{item_id}")])
+                keyboard.append([InlineKeyboardButton("🍹 Выбрать напиток ➡️", callback_data=f"drinksel_{item_id}")])
             else:
-                keyboard.append([InlineKeyboardButton(f"✅ Выбрано: {total_count} шт (Изменить)", callback_data=f"drinksel_{item_id}")])
+                keyboard.append([InlineKeyboardButton(f"✅ В корзине: {total_count} шт (Настроить) ➡️", callback_data=f"drinksel_{item_id}")])
         else:
+            # Обычные товары
             count = cart.get(item_id, {}).get('count', 0)
             if count > 0:
                 keyboard.append([
@@ -332,7 +338,7 @@ async def render_start(chat_id, context):
         msg = await context.bot.send_message(chat_id=chat_id, text=caption, reply_markup=get_main_keyboard(), parse_mode='HTML')
     context.user_data['last_msg_id'] = msg.message_id
 
-# ==================== БАЗОВЫЕ ХЕНДЛЕРЫ И АДМИН ====================
+# ==================== БАЗОВЫЕ ХЕНДЛЕРЫ ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     init_db()
@@ -371,8 +377,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def post_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    if not ADMIN_ID or user_id != ADMIN_ID:
-        return
+    if not ADMIN_ID or user_id != ADMIN_ID: return
 
     weekday = datetime.now().weekday()
     posts_by_day = {
@@ -477,18 +482,25 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer()
         return
 
+    # === ИСПРАВЛЕННЫЙ БЛОК: ВСПЛЫВАЮЩИЙ ЭКРАН ВЫБОРА НАПИТКА ===
     if data.startswith("drinksel_"):
         item_id = data.split("_")[1]
+        
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
-        cursor.execute("SELECT name, cat_id, banner FROM menu_items m JOIN menu_categories c ON m.cat_id = c.id WHERE m.id = ?", (item_id,))
+        # ИСПРАВЛЕНИЕ: Указано m.name, чтобы база не путалась
+        cursor.execute("SELECT m.name, m.cat_id, c.banner FROM menu_items m JOIN menu_categories c ON m.cat_id = c.id WHERE m.id = ?", (item_id,))
         row = cursor.fetchone()
         conn.close()
+        
         if not row: return
         item_name, cat_id, banner = row[0], row[1], row[2]
+
         cart = get_cart_db(user_id)
         count_ice = cart.get(f"{item_id}_icetea", {}).get('count', 0)
         count_sherbet = cart.get(f"{item_id}_sherbet", {}).get('count', 0)
+
+        # Клавиатура "Всплывающего экрана" напитков
         kb = [
             [InlineKeyboardButton("🧊 С напитком: Айс-ти", callback_data="ignore")],
             [
@@ -502,9 +514,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton(f"{count_sherbet} шт", callback_data="ignore"),
                 InlineKeyboardButton("➕", callback_data=f"addcombo_{item_id}_sherbet")
             ],
-            [InlineKeyboardButton("🔙 Готово (Назад)", callback_data=f"cat_{cat_id}")]
+            [InlineKeyboardButton("🔙 Готово (Назад к меню)", callback_data=f"cat_{cat_id}")]
         ]
-        caption = f"<b>{item_name}</b>\n\nВыберите количество порций с нужным напитком:"
+        
+        caption = f"<b>{item_name}</b>\n\nПожалуйста, выберите количество порций с нужным напитком:"
         await edit_media_message(user_id, last_msg_id, banner, caption, InlineKeyboardMarkup(kb), context)
         await query.answer()
         return
@@ -514,19 +527,25 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         action = parts[0]
         item_id = parts[1]
         drink_type = parts[2]
+        
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
         cursor.execute("SELECT name, price, cat_id FROM menu_items WHERE id = ?", (item_id,))
         row = cursor.fetchone()
         conn.close()
         if not row: return
+        
         base_name, base_price, cat_id = row[0], row[1], row[2]
         cart_item_id = f"{item_id}_{drink_type}"
         drink_display = "Айс-ти" if drink_type == "icetea" else "Шербет"
+        
+        # Очищаем название для корзины (убираем лишние эмодзи)
         clean_name = base_name.replace("▪️ ", "").replace("🥩 ", "").replace("🍗 ", "")
         cart_item_name = f"{clean_name} (+ {drink_display})"
+        
         cart = get_cart_db(user_id)
         current_count = cart.get(cart_item_id, {}).get('count', 0)
+        
         if action == "addcombo":
             new_count = current_count + 1
             update_cart_db(user_id, cart_item_id, cart_item_name, base_price, new_count)
@@ -534,21 +553,24 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if current_count > 0:
                 new_count = current_count - 1
                 update_cart_db(user_id, cart_item_id, cart_item_name, base_price, new_count)
+                
         cart = get_cart_db(user_id)
         count_ice = cart.get(f"{item_id}_icetea", {}).get('count', 0)
         count_sherbet = cart.get(f"{item_id}_sherbet", {}).get('count', 0)
+        
         kb = [
             [InlineKeyboardButton("🧊 С напитком: Айс-ти", callback_data="ignore")],
             [InlineKeyboardButton("➖", callback_data=f"rmcombo_{item_id}_icetea"), InlineKeyboardButton(f"{count_ice} шт", callback_data="ignore"), InlineKeyboardButton("➕", callback_data=f"addcombo_{item_id}_icetea")],
             [InlineKeyboardButton("🍷 С напитком: Шербет", callback_data="ignore")],
             [InlineKeyboardButton("➖", callback_data=f"rmcombo_{item_id}_sherbet"), InlineKeyboardButton(f"{count_sherbet} шт", callback_data="ignore"), InlineKeyboardButton("➕", callback_data=f"addcombo_{item_id}_sherbet")],
-            [InlineKeyboardButton("🔙 Готово (Назад)", callback_data=f"cat_{cat_id}")]
+            [InlineKeyboardButton("🔙 Готово (Назад к меню)", callback_data=f"cat_{cat_id}")]
         ]
         try: await context.bot.edit_message_reply_markup(chat_id=user_id, message_id=last_msg_id, reply_markup=InlineKeyboardMarkup(kb))
         except Exception: pass
         await query.answer()
         return
 
+    # ВЕТКА АДМИНА
     if data.startswith("admin_"):
         if not ADMIN_ID or user_id != ADMIN_ID: return
         if data == "admin_toggle":
@@ -605,6 +627,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer()
         return
 
+    # НАВИГАЦИЯ
     if data == "home":
         await query.answer()
         await edit_media_message(user_id, last_msg_id, MAIN_BANNER, "<b>Главное меню</b>\n\nВыберите нужный раздел для заказа.", get_main_keyboard(), context)
@@ -627,6 +650,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer()
         data = f"cat_{cat_id}" 
 
+    # ПРОСМОТР КАТЕГОРИЙ (ВОЗВРАТ ИЗ ЭКРАНА НАПИТКОВ ПРОИСХОДИТ СЮДА)
     if data.startswith("cat_"):
         if data != "lunch_today": 
             try: await query.answer()
@@ -641,6 +665,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption += f"<b>{item['name']}</b>{price_str}\n<i>{item['description']}</i>\n\n"
         await edit_media_message(user_id, last_msg_id, cat_info['banner'], caption, get_category_list_keyboard(user_id, cat_id, items), context)
 
+    # ДОБАВЛЕНИЕ И УДАЛЕНИЕ ИЗ СПИСКА (ОБЫЧНЫЕ ТОВАРЫ)
     elif data.startswith("list_add_"):
         parts = data.split("_")
         item_id = parts[-1]
@@ -667,6 +692,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer()
             await context.bot.edit_message_reply_markup(chat_id=user_id, message_id=last_msg_id, reply_markup=get_category_list_keyboard(user_id, cat_id, items))
 
+    # КОРЗИНА И ВЫБОР ВРЕМЕНИ
     elif data == "cart_list":
         await query.answer()
         items_text, total, _ = get_order_summary(user_id)
