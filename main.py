@@ -13,9 +13,7 @@ from telegram import (
     InputMediaPhoto,
     KeyboardButton,
     ReplyKeyboardMarkup,
-    ReplyKeyboardRemove,
-    BotCommandScopeDefault,
-    BotCommandScopeChat
+    ReplyKeyboardRemove
 )
 from telegram.ext import (
     Application,
@@ -39,7 +37,7 @@ CLICK_MERCHANT_ID = "20421"
 
 QR_FILE_NAME = "qr.jpg"
 
-# Ссылки на картинки
+# Надежные ссылки на картинки
 MAIN_BANNER = "https://picsum.photos/1200/800?random=10"
 CART_BANNER = "https://picsum.photos/1200/800?random=11"
 LUNCH_BANNER = "https://picsum.photos/1200/800?random=12"
@@ -546,7 +544,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             delete_item(item_id)
             await query.message.reply_text("✅ Блюдо успешно удалено из меню.")
 
-        # === КНОПКА ГЕНЕРАЦИИ ОТЧЕТА ===
+        # === ВЫГРУЗКА ИДЕАЛЬНОГО EXCEL ОТЧЕТА ===
         elif data == "admin_export_excel":
             orders = get_all_orders_for_export()
             if not orders:
@@ -558,10 +556,32 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 writer = csv.writer(file, delimiter=';') 
                 writer.writerow(["ID Заказа", "Дата и Время", "Телефон клиента", "Состав заказа", "Сумма (сум)"])
                 for row in orders:
-                    writer.writerow(row)
+                    order_id = row[0]
+                    date_str = row[1]
+                    
+                    # 1. Заставляем Excel видеть телефон как текст
+                    raw_phone = str(row[2])
+                    if not raw_phone.startswith('+'):
+                        raw_phone = '+' + raw_phone
+                    phone_excel = f'="{raw_phone}"' 
+                    
+                    # 2. Делаем состав заказа читаемым в одну строку
+                    items_str = str(row[3]).replace("\n", "   |   ")
+                    
+                    total = row[4]
+                    
+                    writer.writerow([order_id, date_str, phone_excel, items_str, total])
                     
             with open(filename, 'rb') as doc:
-                await context.bot.send_document(chat_id=user_id, document=doc, caption="📊 Ваш отчет по оплаченным заказам.\nОткройте файл в программе Excel.")
+                caption_text = (
+                    "📊 <b>Ваш отчет по заказам готов!</b>\n\n"
+                    "💡 <b>Как сделать его красивым:</b>\n"
+                    "1. Откройте файл в Excel.\n"
+                    "2. Нажмите <b>Ctrl + A</b> (выделить всё).\n"
+                    "3. Дважды кликните по границе между колонками (например, между A и B наверху).\n"
+                    "<i>Колонки расширятся, и решетки исчезнут!</i>"
+                )
+                await context.bot.send_document(chat_id=user_id, document=doc, caption=caption_text, parse_mode='HTML')
             
             os.remove(filename)
             await query.answer("Отчет сгенерирован!")
