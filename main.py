@@ -2,6 +2,7 @@ import os
 import logging
 import asyncio
 import sqlite3
+import csv
 from datetime import datetime
 from aiohttp import web
 from telegram import (
@@ -12,7 +13,9 @@ from telegram import (
     InputMediaPhoto,
     KeyboardButton,
     ReplyKeyboardMarkup,
-    ReplyKeyboardRemove
+    ReplyKeyboardRemove,
+    BotCommandScopeDefault,
+    BotCommandScopeChat
 )
 from telegram.ext import (
     Application,
@@ -192,6 +195,32 @@ def get_all_user_ids():
     conn.close()
     return ids
 
+# --- НОВЫЕ ФУНКЦИИ ДЛЯ ОТЧЕТОВ ---
+def save_order_history(user_id, items_str, total):
+    """Сохраняет заказ в историю базы данных после успешной оплаты"""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute("INSERT INTO order_history (user_id, date, items, total) VALUES (?, ?, ?, ?)", (user_id, date_str, items_str, total))
+    cursor.execute("UPDATE users SET orders_count = orders_count + 1 WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+def get_all_orders_for_export():
+    """Получает все заказы для выгрузки в Excel"""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT o.id, o.date, u.phone, o.items, o.total 
+        FROM order_history o
+        LEFT JOIN users u ON o.user_id = u.user_id
+        ORDER BY o.id DESC
+    """)
+    data = cursor.fetchall()
+    conn.close()
+    return data
+# ---------------------------------
+
 def update_cart_db(user_id, item_id, item_name, price, count):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -314,12 +343,9 @@ async def render_start(chat_id, context):
     context.user_data['last_msg_id'] = msg.message_id
 
 
-# ==================== РЕГИСТРАЦИЯ КОМАНД (ГЛОБАЛЬНАЯ) ====================
+# ==================== РЕГИСТРАЦИЯ КОМАНД ====================
 async def post_init(application: Application):
-    # Принудительно очищаем старое закешированное меню Telegram
     await application.bot.delete_my_commands()
-    
-    # Записываем новое глобальное меню (будет видно всем, но сработает только у админа)
     commands = [
         BotCommand("start", "🏠 Главное меню"),
         BotCommand("admin", "👑 Панель Администратора (Ваша)"),
@@ -331,25 +357,24 @@ async def post_init(application: Application):
 
 # ==================== КОМАНДЫ АДМИНА И ТЕСТЫ ====================
 async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Позволяет узнать свой ID прямо в боте, чтобы вписать в Railway"""
     user_id = update.effective_user.id
     text = f"Ваш Telegram ID:\n<code>{user_id}</code>\n\nСкопируйте его и вставьте в переменную ADMIN_ID в Railway."
     await update.message.reply_text(text, parse_mode='HTML')
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    
-    # Жесткая проверка: если это не ваш ID, команда не сработает
     if not ADMIN_ID or user_id != ADMIN_ID: 
         await update.message.reply_text("⛔ У вас нет прав администратора.")
         return
     
+    # НОВАЯ КНОПКА ОТЧЕТА ЗДЕСЬ
     keyboard = [
         [InlineKeyboardButton("📢 Рассылка всем", callback_data="admin_broadcast")],
         [InlineKeyboardButton("➕ Добавить блюдо", callback_data="admin_add_dish"), InlineKeyboardButton("🗑 Удалить", callback_data="admin_del_dish")],
+        [InlineKeyboardButton("📊 Скачать отчет (Excel)", callback_data="admin_export_excel")],
         [InlineKeyboardButton("⛔ Открыть/Закрыть прием заказов", callback_data="admin_toggle")]
     ]
-    await update.message.reply_text("👑 <b>Панель администратора</b>\nЗдесь вы можете редактировать меню и управлять ботом.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    await update.message.reply_text("👑 <b>Панель администратора</b>\nЗдесь вы можете редактировать меню, выгружать отчеты и управлять ботом.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 async def post_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -358,7 +383,6 @@ async def post_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     weekday = datetime.now().weekday()
-    
     posts_by_day = {
         0: ("<b>Начинаем неделю вкусно и продуктивно! ☀️</b>\n\nСегодня на обед мы приготовили для вас домашние комплексы. В каждый сет по умолчанию входит салат <b>Винегрет</b> и освежающий компот! 🍹\n\n<b>На выбор:</b>\n🥩 Сочные тефтели из говядины с рассыпчатой гречкой — <i>62 000 сум</i>\n🍗 Нежная курица в сливочном соусе с рисом — <i>58 000 сум</i>\n\nУспейте сделать заказ до 11:00!", LUNCH_BANNER),
         1: ("<b>Время сытного обеда! Что у нас сегодня? 😋</b>\n\nНаши комплексные обеды уже ждут вас. Напоминаем: компот и свежий овощной салат уже включены в стоимость! 🥗🥤\n\n<b>На выбор:</b>\n🥩 Тушеная говядина с тающим во рту картофелем — <i>62 000 сум</i>\n🍗 Куриное филе под сырно-томатной корочкой с воздушным пюре — <i>58 000 сум</i>\n\nЗарядитесь энергией на вторую половину дня!", LUNCH_BANNER),
@@ -381,7 +405,6 @@ async def post_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"✅ Успешно! Пост на сегодняшний день отправлен в канал {CHANNEL_ID}.")
     except Exception as e:
         await update.message.reply_text(f"❌ Ошибка отправки: {e}\nУбедитесь, что бот является Администратором в канале {CHANNEL_ID}!")
-
 
 # ==================== ОБРАБОТКА ДЕЙСТВИЙ АДМИНА ====================
 async def run_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -455,24 +478,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
 # ==================== ХЕНДЛЕРЫ ====================
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    init_db()
-    if not get_user_db(user_id):
-        keyboard = [[KeyboardButton("📱 Поделиться номером", request_contact=True)]]
-        await context.bot.send_message(chat_id=user_id, text="🏠 Чтобы начать, поделитесь номером телефона 👇", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True))
-    else:
-        await render_start(user_id, context)
-
-async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    contact = update.message.contact
-    if contact:
-        add_user_db(user_id, contact.phone_number)
-        await update.message.reply_text("✅ Номер сохранён.", reply_markup=ReplyKeyboardRemove())
-        await render_start(user_id, context)
-
-
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
@@ -527,7 +532,31 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             item_id = data.split("_")[2]
             delete_item(item_id)
             await query.message.reply_text("✅ Блюдо успешно удалено из меню.")
-        
+
+        # === НОВАЯ КНОПКА ГЕНЕРАЦИИ ОТЧЕТА ===
+        elif data == "admin_export_excel":
+            orders = get_all_orders_for_export()
+            if not orders:
+                await query.answer("Отчет пуст. Оплаченных заказов еще не было.", show_alert=True)
+                return
+            
+            # Создаем CSV файл
+            filename = f"report_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+            # utf-8-sig нужен, чтобы Excel правильно открыл русские буквы
+            with open(filename, mode='w', encoding='utf-8-sig', newline='') as file:
+                writer = csv.writer(file, delimiter=';') # Точка с запятой - стандарт для русского Excel
+                writer.writerow(["ID Заказа", "Дата и Время", "Телефон клиента", "Состав заказа", "Сумма (сум)"])
+                for row in orders:
+                    writer.writerow(row)
+                    
+            # Отправляем документ
+            with open(filename, 'rb') as doc:
+                await context.bot.send_document(chat_id=user_id, document=doc, caption="📊 Ваш отчет по оплаченным заказам.\nОткройте файл в программе Excel.")
+            
+            # Удаляем файл с сервера после отправки
+            os.remove(filename)
+            await query.answer("Отчет сгенерирован!")
+
         await query.answer()
         return
 
@@ -664,11 +693,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg = await context.bot.send_message(chat_id=user_id, text=caption, reply_markup=kb, parse_mode='HTML')
         context.user_data['last_msg_id'] = msg.message_id
 
-    # ФИНАЛЬНЫЙ ШАГ И ОТПРАВКА АДМИНУ
+    # ФИНАЛЬНЫЙ ШАГ (УСПЕШНАЯ ОПЛАТА И ЗАПИСЬ В ОТЧЕТ)
     elif data == "paid_order":
         await query.answer()
         items_text, total, items_str = get_order_summary(user_id)
         if not items_text: return
+        
+        # --- СОХРАНЯЕМ В БАЗУ ДЛЯ EXCEL ОТЧЕТА ---
+        save_order_history(user_id, items_str, total)
+        # -----------------------------------------
+        
         clear_cart_db(user_id)
         
         pickup_time = context.user_data.get('pickup_time', 'В порядке очереди')
@@ -707,11 +741,10 @@ async def main():
     app_bot.add_handler(CommandHandler("start", start))
     app_bot.add_handler(CommandHandler("post", post_to_channel))
     app_bot.add_handler(CommandHandler("admin", admin_command))
-    app_bot.add_handler(CommandHandler("myid", myid_command)) # НОВАЯ ПОЛЕЗНАЯ КОМАНДА
+    app_bot.add_handler(CommandHandler("myid", myid_command)) 
     
     app_bot.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    
     app_bot.add_handler(MessageHandler(filters.CONTACT, handle_contact))
     app_bot.add_handler(CallbackQueryHandler(button_handler))
 
