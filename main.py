@@ -195,9 +195,8 @@ def get_all_user_ids():
     conn.close()
     return ids
 
-# --- НОВЫЕ ФУНКЦИИ ДЛЯ ОТЧЕТОВ ---
+# --- ФУНКЦИИ ДЛЯ ОТЧЕТОВ ---
 def save_order_history(user_id, items_str, total):
-    """Сохраняет заказ в историю базы данных после успешной оплаты"""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -207,7 +206,6 @@ def save_order_history(user_id, items_str, total):
     conn.close()
 
 def get_all_orders_for_export():
-    """Получает все заказы для выгрузки в Excel"""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("""
@@ -219,7 +217,6 @@ def get_all_orders_for_export():
     data = cursor.fetchall()
     conn.close()
     return data
-# ---------------------------------
 
 def update_cart_db(user_id, item_id, item_name, price, count):
     conn = sqlite3.connect(DB_NAME)
@@ -342,7 +339,6 @@ async def render_start(chat_id, context):
         msg = await context.bot.send_message(chat_id=chat_id, text=caption, reply_markup=get_main_keyboard(), parse_mode='HTML')
     context.user_data['last_msg_id'] = msg.message_id
 
-
 # ==================== РЕГИСТРАЦИЯ КОМАНД ====================
 async def post_init(application: Application):
     await application.bot.delete_my_commands()
@@ -355,7 +351,25 @@ async def post_init(application: Application):
     await application.bot.set_my_commands(commands)
 
 
-# ==================== КОМАНДЫ АДМИНА И ТЕСТЫ ====================
+# ==================== БАЗОВЫЕ ХЕНДЛЕРЫ ====================
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    init_db()
+    if not get_user_db(user_id):
+        keyboard = [[KeyboardButton("📱 Поделиться номером", request_contact=True)]]
+        await context.bot.send_message(chat_id=user_id, text="🏠 Чтобы начать, поделитесь номером телефона 👇", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True))
+    else:
+        await render_start(user_id, context)
+
+async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    contact = update.message.contact
+    if contact:
+        add_user_db(user_id, contact.phone_number)
+        await update.message.reply_text("✅ Номер сохранён.", reply_markup=ReplyKeyboardRemove())
+        await render_start(user_id, context)
+
+# ==================== КОМАНДЫ АДМИНА ====================
 async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = f"Ваш Telegram ID:\n<code>{user_id}</code>\n\nСкопируйте его и вставьте в переменную ADMIN_ID в Railway."
@@ -367,7 +381,6 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ У вас нет прав администратора.")
         return
     
-    # НОВАЯ КНОПКА ОТЧЕТА ЗДЕСЬ
     keyboard = [
         [InlineKeyboardButton("📢 Рассылка всем", callback_data="admin_broadcast")],
         [InlineKeyboardButton("➕ Добавить блюдо", callback_data="admin_add_dish"), InlineKeyboardButton("🗑 Удалить", callback_data="admin_del_dish")],
@@ -477,7 +490,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await handle_admin_text(update, context):
             return
 
-# ==================== ХЕНДЛЕРЫ ====================
+# ==================== ОСНОВНОЙ ОБРАБОТЧИК КНОПОК ====================
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
@@ -533,27 +546,23 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             delete_item(item_id)
             await query.message.reply_text("✅ Блюдо успешно удалено из меню.")
 
-        # === НОВАЯ КНОПКА ГЕНЕРАЦИИ ОТЧЕТА ===
+        # === КНОПКА ГЕНЕРАЦИИ ОТЧЕТА ===
         elif data == "admin_export_excel":
             orders = get_all_orders_for_export()
             if not orders:
                 await query.answer("Отчет пуст. Оплаченных заказов еще не было.", show_alert=True)
                 return
             
-            # Создаем CSV файл
             filename = f"report_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
-            # utf-8-sig нужен, чтобы Excel правильно открыл русские буквы
             with open(filename, mode='w', encoding='utf-8-sig', newline='') as file:
-                writer = csv.writer(file, delimiter=';') # Точка с запятой - стандарт для русского Excel
+                writer = csv.writer(file, delimiter=';') 
                 writer.writerow(["ID Заказа", "Дата и Время", "Телефон клиента", "Состав заказа", "Сумма (сум)"])
                 for row in orders:
                     writer.writerow(row)
                     
-            # Отправляем документ
             with open(filename, 'rb') as doc:
                 await context.bot.send_document(chat_id=user_id, document=doc, caption="📊 Ваш отчет по оплаченным заказам.\nОткройте файл в программе Excel.")
             
-            # Удаляем файл с сервера после отправки
             os.remove(filename)
             await query.answer("Отчет сгенерирован!")
 
