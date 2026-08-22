@@ -49,16 +49,16 @@ try:
 except (ValueError, TypeError):
     ADMIN_ID = None
 
-# Версия 11 - убраны подписки, обновлено меню
-DB_NAME = 'delivery_bot_v11.db'
+# Версия 12 - Строгий дизайн, кнопки "Добавить", выбор напитков
+DB_NAME = 'delivery_bot_v12.db'
 menu_active = True
 
-# ==================== ДАННЫЕ МЕНЮ ====================
+# ==================== ДАННЫЕ МЕНЮ (СТРОГИЕ) ====================
 DEFAULT_CATEGORIES = [
-    ('breakfasts', '🍳 Завтраки', 'https://picsum.photos/1200/800?random=20'),
-    ('hot_drinks', '🔥 Горячие напитки', 'https://picsum.photos/1200/800?random=21'),
-    ('cold_drinks', '🧊 Холодные напитки', 'https://picsum.photos/1200/800?random=22'),
-    ('fresh_drinks', '🍹 Фреши', 'https://picsum.photos/1200/800?random=23'),
+    ('breakfasts', 'Завтраки', 'https://picsum.photos/1200/800?random=20'),
+    ('hot_drinks', 'Горячие напитки', 'https://picsum.photos/1200/800?random=21'),
+    ('cold_drinks', 'Холодные напитки', 'https://picsum.photos/1200/800?random=22'),
+    ('fresh_drinks', 'Фреши', 'https://picsum.photos/1200/800?random=23'),
     ('mon', 'Понедельник', MAIN_BANNER), 
     ('tue', 'Вторник', MAIN_BANNER), 
     ('wed', 'Среда', MAIN_BANNER),
@@ -80,32 +80,42 @@ DEFAULT_ITEMS = [
     
     ('cold_drinks', 'Кола 0.25 / Кола (Zero)', 'Освежающая газировка.', 13000, ''),
     ('cold_drinks', 'Fanta 0.25', 'Апельсиновая газировка.', 12000, ''),
-    ('cold_drinks', 'Мохито (Клас. / Клубничный)', 'Охлаждающий напиток.', 20000, ''),
+    ('cold_drinks', 'Мохито', 'Охлаждающий напиток.', 20000, ''),
     ('cold_drinks', 'Chortoq 0.25 (с газом)', 'Минеральная газированная вода.', 12000, ''),
     
     ('fresh_drinks', 'Яблочный фреш', 'Свежевыжатый сок из зеленых яблок (250 мл).', 30000, ''),
-    ('fresh_drinks', 'Фреш Морковь-Яблоко', 'Витаминный заряд (250 мл).', 30000, ''),
+    ('fresh_drinks', 'Морковно-яблочный фреш', 'Витаминный заряд (250 мл).', 30000, ''),
     ('fresh_drinks', 'Фреш Детокс', 'Свекла, яблоко, морковь (250 мл).', 32000, ''),
 
-    # ПОНЕДЕЛЬНИК
-    ('mon', 'Пн. Комплекс (Говядина)', 'Жаркое с картофелем + Салат витаминный + Айс-ти/Шербет', 62000, ''),
-    ('mon', 'Пн. Комплекс (Курица)', 'Курица в карри соусе (с рисом и пюре) + Салат витаминный + Айс-ти/Шербет', 58000, ''),
+    # ПОНЕДЕЛЬНИК (РАЗДЕЛЕНИЕ ПО НАПИТКАМ)
+    ('mon', 'Пн (Говядина) + Айс-ти', 'Жаркое с картофелем + Салат витаминный + Айс-ти', 62000, ''),
+    ('mon', 'Пн (Говядина) + Шербет', 'Жаркое с картофелем + Салат витаминный + Шербет', 62000, ''),
+    ('mon', 'Пн (Курица) + Айс-ти', 'Курица в карри соусе (с рисом и пюре) + Салат витаминный + Айс-ти', 58000, ''),
+    ('mon', 'Пн (Курица) + Шербет', 'Курица в карри соусе (с рисом и пюре) + Салат витаминный + Шербет', 58000, ''),
     
     # ВТОРНИК
-    ('tue', 'Вт. Комплекс (Говядина)', 'Говядина с овощами (рис/гречка) + Салат Французский + Айс-ти/Шербет', 62000, ''),
-    ('tue', 'Вт. Комплекс (Курица)', 'Куриные котлеты (рис/гречка) + Салат Французский + Айс-ти/Шербет', 58000, ''),
+    ('tue', 'Вт (Говядина) + Айс-ти', 'Говядина с овощами (рис/гречка) + Салат Французский + Айс-ти', 62000, ''),
+    ('tue', 'Вт (Говядина) + Шербет', 'Говядина с овощами (рис/гречка) + Салат Французский + Шербет', 62000, ''),
+    ('tue', 'Вт (Курица) + Айс-ти', 'Куриные котлеты (рис/гречка) + Салат Французский + Айс-ти', 58000, ''),
+    ('tue', 'Вт (Курица) + Шербет', 'Куриные котлеты (рис/гречка) + Салат Французский + Шербет', 58000, ''),
     
     # СРЕДА
-    ('wed', 'Ср. Комплекс (Говядина)', 'Бефстроганов (пюре/рис/гречка/картофель) + Овощной салат + Айс-ти/Шербет', 62000, ''),
-    ('wed', 'Ср. Комплекс (Курица)', 'Куриная отбивная с томатом и сыром (пюре/рис/гречка/картофель) + Овощной салат + Айс-ти/Шербет', 58000, ''),
+    ('wed', 'Ср (Говядина) + Айс-ти', 'Бефстроганов (пюре/рис/гречка/карт.) + Овощной салат + Айс-ти', 62000, ''),
+    ('wed', 'Ср (Говядина) + Шербет', 'Бефстроганов (пюре/рис/гречка/карт.) + Овощной салат + Шербет', 62000, ''),
+    ('wed', 'Ср (Курица) + Айс-ти', 'Куриная отбивная (пюре/рис/гречка/карт.) + Овощной салат + Айс-ти', 58000, ''),
+    ('wed', 'Ср (Курица) + Шербет', 'Куриная отбивная (пюре/рис/гречка/карт.) + Овощной салат + Шербет', 58000, ''),
     
     # ЧЕТВЕРГ
-    ('thu', 'Чт. Комплекс (Говядина)', 'Плов из говядины + Ачик-чучук/Соленья + Айс-ти/Шербет', 62000, ''),
-    ('thu', 'Чт. Комплекс (Курица)', 'Куриный Ган-пан (пюре/перловка) + Ачик-чучук/Соленья + Айс-ти/Шербет', 58000, ''),
+    ('thu', 'Чт (Говядина) + Айс-ти', 'Плов из говядины + Ачик-чучук/Соленья + Айс-ти', 62000, ''),
+    ('thu', 'Чт (Говядина) + Шербет', 'Плов из говядины + Ачик-чучук/Соленья + Шербет', 62000, ''),
+    ('thu', 'Чт (Курица) + Айс-ти', 'Куриный Ган-пан (пюре/перловка) + Ачик-чучук/Соленья + Айс-ти', 58000, ''),
+    ('thu', 'Чт (Курица) + Шербет', 'Куриный Ган-пан (пюре/перловка) + Ачик-чучук/Соленья + Шербет', 58000, ''),
     
     # ПЯТНИЦА
-    ('fri', 'Пт. Комплекс (Говядина)', 'Гуляш из говядины (рис/гречка/овощи) + Салат Греческий + Айс-ти/Шербет', 62000, ''),
-    ('fri', 'Пт. Комплекс (Курица)', 'Куриный казан-кебаб (рис/гречка/овощи) + Салат Греческий + Айс-ти/Шербет', 58000, '')
+    ('fri', 'Пт (Говядина) + Айс-ти', 'Гуляш из говядины (рис/гречка/овощи) + Салат Греческий + Айс-ти', 62000, ''),
+    ('fri', 'Пт (Говядина) + Шербет', 'Гуляш из говядины (рис/гречка/овощи) + Салат Греческий + Шербет', 62000, ''),
+    ('fri', 'Пт (Курица) + Айс-ти', 'Куриный казан-кебаб (рис/гречка/овощи) + Салат Греческий + Айс-ти', 58000, ''),
+    ('fri', 'Пт (Курица) + Шербет', 'Куриный казан-кебаб (рис/гречка/овощи) + Салат Греческий + Шербет', 58000, '')
 ]
 
 # ==================== РАБОТА С БД ====================
@@ -256,29 +266,29 @@ def get_order_summary(user_id):
         total += total_price
     return "\n".join(formatted_lines), total, ", ".join(short_lines)
 
-# ==================== КЛАВИАТУРЫ ====================
+# ==================== КЛАВИАТУРЫ (СТРОГИЕ) ====================
 def get_main_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🍳 Завтраки", callback_data="cat_breakfasts")],
-        [InlineKeyboardButton("🍱 Комплексный обед дня", callback_data="lunch_today")],
-        [InlineKeyboardButton("🥤 Напитки", callback_data="nav_drinks")],
-        [InlineKeyboardButton("🗓 Недельное меню (предзаказ)", callback_data="nav_week")],
-        [InlineKeyboardButton("🛍 Корзина", callback_data="cart_list")]
+        [InlineKeyboardButton("Завтраки", callback_data="cat_breakfasts")],
+        [InlineKeyboardButton("Комплексный обед дня", callback_data="lunch_today")],
+        [InlineKeyboardButton("Напитки", callback_data="nav_drinks")],
+        [InlineKeyboardButton("Недельное меню (предзаказ)", callback_data="nav_week")],
+        [InlineKeyboardButton("Корзина", callback_data="cart_list")]
     ])
 
 def get_drinks_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔥 Горячие напитки", callback_data="cat_hot_drinks")],
-        [InlineKeyboardButton("🧊 Холодные напитки", callback_data="cat_cold_drinks")],
-        [InlineKeyboardButton("🍹 Фреши", callback_data="cat_fresh_drinks")],
-        [InlineKeyboardButton("⬅️ Назад", callback_data="home")]
+        [InlineKeyboardButton("Горячие напитки", callback_data="cat_hot_drinks")],
+        [InlineKeyboardButton("Холодные напитки", callback_data="cat_cold_drinks")],
+        [InlineKeyboardButton("Фреши", callback_data="cat_fresh_drinks")],
+        [InlineKeyboardButton("Назад", callback_data="home")]
     ])
 
 def get_week_menu_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("Пн", callback_data="cat_mon"), InlineKeyboardButton("Вт", callback_data="cat_tue"), InlineKeyboardButton("Ср", callback_data="cat_wed")],
         [InlineKeyboardButton("Чт", callback_data="cat_thu"), InlineKeyboardButton("Пт", callback_data="cat_fri")],
-        [InlineKeyboardButton("⬅️ Назад", callback_data="home")]
+        [InlineKeyboardButton("Назад", callback_data="home")]
     ])
 
 def get_category_list_keyboard(user_id, cat_id, items):
@@ -290,22 +300,29 @@ def get_category_list_keyboard(user_id, cat_id, items):
         count = cart.get(item_id, {}).get('count', 0)
         
         display_name = item['name']
-        if len(display_name) > 16:
-            display_name = display_name[:14] + ".."
-            
-        middle_text = f"{display_name} : {count} шт"
         
-        keyboard.append([
-            InlineKeyboardButton("➖", callback_data=f"list_rm_{cat_id}_{item_id}"),
-            InlineKeyboardButton(middle_text, callback_data="ignore"),
-            InlineKeyboardButton("➕", callback_data=f"list_add_{cat_id}_{item_id}")
-        ])
+        # 1. Строка с названием блюда на всю ширину (чтобы текст не обрезался)
+        keyboard.append([InlineKeyboardButton(display_name, callback_data="ignore")])
+        
+        # 2. Строка управления количеством (строгий стиль под названием)
+        if count > 0:
+            keyboard.append([
+                InlineKeyboardButton("-", callback_data=f"list_rm_{cat_id}_{item_id}"),
+                InlineKeyboardButton(f"{count} шт", callback_data="ignore"),
+                InlineKeyboardButton("+", callback_data=f"list_add_{cat_id}_{item_id}")
+            ])
+        else:
+            # Если товара нет в корзине, показываем аккуратную кнопку "Добавить"
+            keyboard.append([
+                InlineKeyboardButton("Добавить", callback_data=f"list_add_{cat_id}_{item_id}")
+            ])
 
     back_data = "home"
     if cat_id in ['hot_drinks', 'cold_drinks', 'fresh_drinks']: back_data = "nav_drinks"
     elif cat_id in ['mon', 'tue', 'wed', 'thu', 'fri']: back_data = "nav_week"
         
-    keyboard.append([InlineKeyboardButton("🛍 В корзину", callback_data="cart_list"), InlineKeyboardButton("🔙 Назад", callback_data=back_data)])
+    # Строгие кнопки внизу
+    keyboard.append([InlineKeyboardButton("Корзина", callback_data="cart_list"), InlineKeyboardButton("Назад", callback_data=back_data)])
     return InlineKeyboardMarkup(keyboard)
 
 # ==================== ОТПРАВКА СООБЩЕНИЙ ====================
@@ -327,7 +344,7 @@ async def edit_media_message(chat_id, message_id, photo_source, caption, reply_m
         context.user_data['last_msg_id'] = msg.message_id
 
 async def render_start(chat_id, context):
-    caption = "🏠 <b>Главное меню 👇</b>\n\n🍽 Выберите нужный раздел для заказа."
+    caption = "<b>Главное меню</b>\n\nВыберите нужный раздел для заказа."
     try: await context.bot.delete_message(chat_id=chat_id, message_id=context.user_data.get('last_msg_id'))
     except Exception: pass
     
@@ -341,10 +358,10 @@ async def render_start(chat_id, context):
 async def post_init(application: Application):
     await application.bot.delete_my_commands()
     commands = [
-        BotCommand("start", "🏠 Главное меню"),
-        BotCommand("admin", "👑 Панель Администратора (Ваша)"),
-        BotCommand("post", "📢 Опубликовать меню в канал"),
-        BotCommand("myid", "🆔 Узнать свой ID (для настройки)")
+        BotCommand("start", "Главное меню"),
+        BotCommand("admin", "Панель Администратора"),
+        BotCommand("post", "Опубликовать меню в канал"),
+        BotCommand("myid", "Узнать свой ID")
     ]
     await application.bot.set_my_commands(commands)
 
@@ -354,8 +371,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     init_db()
     if not get_user_db(user_id):
-        keyboard = [[KeyboardButton("📱 Поделиться номером", request_contact=True)]]
-        await context.bot.send_message(chat_id=user_id, text="🏠 Чтобы начать, поделитесь номером телефона 👇", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True))
+        keyboard = [[KeyboardButton("Поделиться номером", request_contact=True)]]
+        await context.bot.send_message(chat_id=user_id, text="Для начала работы, пожалуйста, поделитесь номером телефона.", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True))
     else:
         await render_start(user_id, context)
 
@@ -364,7 +381,7 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     contact = update.message.contact
     if contact:
         add_user_db(user_id, contact.phone_number)
-        await update.message.reply_text("✅ Номер сохранён.", reply_markup=ReplyKeyboardRemove())
+        await update.message.reply_text("Номер сохранен.", reply_markup=ReplyKeyboardRemove())
         await render_start(user_id, context)
 
 # ==================== КОМАНДЫ АДМИНА ====================
@@ -376,30 +393,29 @@ async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not ADMIN_ID or user_id != ADMIN_ID: 
-        await update.message.reply_text("⛔ У вас нет прав администратора.")
+        await update.message.reply_text("У вас нет прав администратора.")
         return
     
     keyboard = [
-        [InlineKeyboardButton("📢 Рассылка всем", callback_data="admin_broadcast")],
-        [InlineKeyboardButton("➕ Добавить блюдо", callback_data="admin_add_dish"), InlineKeyboardButton("🗑 Удалить", callback_data="admin_del_dish")],
-        [InlineKeyboardButton("📊 Скачать отчет (Excel)", callback_data="admin_export_excel")],
-        [InlineKeyboardButton("⛔ Открыть/Закрыть прием заказов", callback_data="admin_toggle")]
+        [InlineKeyboardButton("Рассылка", callback_data="admin_broadcast")],
+        [InlineKeyboardButton("Добавить блюдо", callback_data="admin_add_dish"), InlineKeyboardButton("Удалить блюдо", callback_data="admin_del_dish")],
+        [InlineKeyboardButton("Скачать отчет (Excel)", callback_data="admin_export_excel")],
+        [InlineKeyboardButton("Открыть/Закрыть заказы", callback_data="admin_toggle")]
     ]
-    await update.message.reply_text("👑 <b>Панель администратора</b>\nЗдесь вы можете редактировать меню, выгружать отчеты и управлять ботом.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
+    await update.message.reply_text("<b>Панель администратора</b>\nУправление меню и отчетами.", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='HTML')
 
 async def post_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not ADMIN_ID or user_id != ADMIN_ID:
-        await update.message.reply_text("⛔ У вас нет прав администратора.")
         return
 
     weekday = datetime.now().weekday()
     posts_by_day = {
-        0: ("<b>Начинаем неделю вкусно и продуктивно! ☀️</b>\n\nСегодня на обед мы приготовили для вас комплексы. В сет по умолчанию входит <b>Салат витаминный</b> и прохладительный напиток (Айс-ти или Шербет)!\n\n<b>На выбор:</b>\n🥩 Жаркое с картофелем — <i>62 000 сум</i>\n🍗 Курица в карри соусе (с рисом и пюре) — <i>58 000 сум</i>\n\nУспейте сделать заказ до 11:00!", LUNCH_BANNER),
-        1: ("<b>Время сытного обеда! Что у нас сегодня? 😋</b>\n\nНаши обеды ждут вас. Напоминаем: напиток и <b>Салат Французский</b> уже включены в стоимость!\n\n<b>На выбор:</b>\n🥩 Говядина с овощами (рис/гречка) — <i>62 000 сум</i>\n🍗 Куриные котлеты (рис/гречка) — <i>58 000 сум</i>\n\nЗарядитесь энергией на вторую половину дня!", LUNCH_BANNER),
-        2: ("<b>Экватор рабочей недели! Порадуйте себя вкусным обедом 🍽</b>\n\nВ каждом комплексе вас ждет <b>Овощной салат</b> и холодный напиток на выбор (Айс-ти или Шербет).\n\n<b>Горячее на выбор:</b>\n🥩 Бефстроганов (гарнир на выбор) — <i>62 000 сум</i>\n🍗 Куриная отбивная с томатом и сыром — <i>58 000 сум</i>\n\nВыбирайте то, что нравится больше!", LUNCH_BANNER),
-        3: ("<b>Четверг — день Плова! 🍚🔥</b>\n\nКакая же неделя без плова? Подаем с классическим салатом (Ачик-чучук или соленья) и напитком.\n\n<b>Наши комплексы на сегодня:</b>\n🥩 Плов из говядины — <i>62 000 сум</i>\n🍗 Куриный Ган-пан (пюре/перловка) — <i>58 000 сум</i>\n\nПорции разлетаются быстро!", LUNCH_BANNER),
-        4: ("<b>Пятница! Вкусно завершаем рабочую неделю 🎉</b>\n\nСегодня к горячему мы подаем всеми любимый <b>Салат Греческий</b> и освежающий напиток!\n\n<b>Выбирайте свой комплекс:</b>\n🥩 Гуляш из говядины (рис/гречка/овощи) — <i>62 000 сум</i>\n🍗 Куриный казан-кебаб (рис/гречка/овощи) — <i>58 000 сум</i>\n\nСпасибо, что обедали с нами всю неделю!", LUNCH_BANNER)
+        0: ("<b>Понедельник — продуктивное начало!</b>\n\nСегодня в комплексе: <b>Салат витаминный</b>.\n\n<b>Горячее и напиток на выбор:</b>\n• Жаркое с картофелем (Айс-ти или Шербет) — <i>62 000 сум</i>\n• Курица в карри соусе с рисом и пюре (Айс-ти или Шербет) — <i>58 000 сум</i>", LUNCH_BANNER),
+        1: ("<b>Вторник — время вкусного обеда!</b>\n\nСегодня в комплексе: <b>Салат Французский</b>.\n\n<b>Горячее и напиток на выбор:</b>\n• Говядина с овощами (Айс-ти или Шербет) — <i>62 000 сум</i>\n• Куриные котлеты (Айс-ти или Шербет) — <i>58 000 сум</i>", LUNCH_BANNER),
+        2: ("<b>Среда — экватор недели!</b>\n\nСегодня в комплексе: <b>Овощной салат</b>.\n\n<b>Горячее и напиток на выбор:</b>\n• Бефстроганов (Айс-ти или Шербет) — <i>62 000 сум</i>\n• Куриная отбивная (Айс-ти или Шербет) — <i>58 000 сум</i>", LUNCH_BANNER),
+        3: ("<b>Четверг — день Плова!</b>\n\nСегодня в комплексе: <b>Салат Ачик-чучук или соленья</b>.\n\n<b>Горячее и напиток на выбор:</b>\n• Плов из говядины (Айс-ти или Шербет) — <i>62 000 сум</i>\n• Куриный Ган-пан (Айс-ти или Шербет) — <i>58 000 сум</i>", LUNCH_BANNER),
+        4: ("<b>Пятница — завершаем неделю вкусно!</b>\n\nСегодня в комплексе: <b>Салат Греческий</b>.\n\n<b>Горячее и напиток на выбор:</b>\n• Гуляш из говядины (Айс-ти или Шербет) — <i>62 000 сум</i>\n• Куриный казан-кебаб (Айс-ти или Шербет) — <i>58 000 сум</i>", LUNCH_BANNER)
     }
 
     if weekday not in posts_by_day:
@@ -409,19 +425,19 @@ async def post_to_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text, photo = posts_by_day[weekday]
     bot_info = await context.bot.get_me()
     bot_url = f"https://t.me/{bot_info.username}"
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🥗 Заказать обед в 2 клика", url=bot_url)]])
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("Заказать обед", url=bot_url)]])
 
     try:
         await context.bot.send_photo(chat_id=CHANNEL_ID, photo=photo, caption=text, reply_markup=keyboard, parse_mode='HTML')
-        await update.message.reply_text(f"✅ Успешно! Пост на сегодняшний день отправлен в канал {CHANNEL_ID}.")
+        await update.message.reply_text(f"Пост успешно отправлен в канал {CHANNEL_ID}.")
     except Exception as e:
-        await update.message.reply_text(f"❌ Ошибка отправки: {e}\nУбедитесь, что бот является Администратором в канале {CHANNEL_ID}!")
+        await update.message.reply_text(f"Ошибка отправки: {e}")
 
 # ==================== ОБРАБОТКА ДЕЙСТВИЙ АДМИНА ====================
 async def run_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users = get_all_user_ids()
     count = 0
-    msg = await update.message.reply_text("⏳ Рассылка начата...")
+    msg = await update.message.reply_text("Рассылка начата...")
     for uid in users:
         try:
             await context.bot.copy_message(chat_id=uid, from_chat_id=update.message.chat_id, message_id=update.message.message_id)
@@ -429,7 +445,7 @@ async def run_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await asyncio.sleep(0.05)
         except Exception: pass
     context.user_data['admin_state'] = None
-    await msg.edit_text(f"✅ Рассылка завершена!\nУспешно отправлено: {count} пользователям.")
+    await msg.edit_text(f"Рассылка завершена. Успешно отправлено: {count} пользователям.")
 
 async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
@@ -437,7 +453,7 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if text.lower() == 'отмена':
         context.user_data['admin_state'] = None
-        await update.message.reply_text("❌ Действие отменено.")
+        await update.message.reply_text("Действие отменено.")
         return True
         
     if state == 'WAITING_BROADCAST':
@@ -446,26 +462,26 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif state == 'WAITING_DISH_NAME':
         context.user_data['new_dish']['name'] = text
         context.user_data['admin_state'] = 'WAITING_DISH_DESC'
-        await update.message.reply_text("✏️ Введите описание блюда:")
+        await update.message.reply_text("Введите описание блюда:")
         return True
     elif state == 'WAITING_DISH_DESC':
         context.user_data['new_dish']['desc'] = text
         context.user_data['admin_state'] = 'WAITING_DISH_PRICE'
-        await update.message.reply_text("💰 Введите цену (только цифры, например 45000):")
+        await update.message.reply_text("Введите цену (только цифры):")
         return True
     elif state == 'WAITING_DISH_PRICE':
         if not text.isdigit():
-            await update.message.reply_text("⚠️ Ошибка! Введите только цифры.")
+            await update.message.reply_text("Ошибка! Введите только цифры.")
             return True
         context.user_data['new_dish']['price'] = int(text)
         context.user_data['admin_state'] = 'WAITING_DISH_PHOTO'
-        await update.message.reply_text("🖼 Отправьте ссылку на фото блюда (http...) или отправьте саму картинку прямо сюда:")
+        await update.message.reply_text("Отправьте ссылку на фото блюда или саму картинку:")
         return True
     elif state == 'WAITING_DISH_PHOTO':
         context.user_data['new_dish']['photo'] = text 
         save_new_dish(context.user_data['new_dish'])
         context.user_data['admin_state'] = None
-        await update.message.reply_text("✅ Блюдо успешно добавлено в меню!")
+        await update.message.reply_text("Блюдо добавлено в меню.")
         return True
     return False
 
@@ -480,7 +496,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['new_dish']['photo'] = photo_id
             save_new_dish(context.user_data['new_dish'])
             context.user_data['admin_state'] = None
-            await update.message.reply_text("✅ Блюдо успешно добавлено в меню!")
+            await update.message.reply_text("Блюдо добавлено в меню.")
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -507,48 +523,48 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if data == "admin_toggle":
             global menu_active
             menu_active = not menu_active
-            status = "ОТКРЫТ ✅" if menu_active else "ЗАКРЫТ ⛔"
+            status = "ОТКРЫТ" if menu_active else "ЗАКРЫТ"
             await query.answer(f"Прием заказов: {status}", show_alert=True)
             
         elif data == "admin_broadcast":
             context.user_data['admin_state'] = 'WAITING_BROADCAST'
-            await query.message.reply_text("📢 Отправьте сообщение для рассылки всем (текст или картинка).\nДля отмены напишите 'отмена'.")
+            await query.message.reply_text("Отправьте сообщение для рассылки (текст или картинка). Для отмены напишите 'отмена'.")
 
         elif data == "admin_add_dish":
             cats = get_categories()
             kb = [[InlineKeyboardButton(c['name'], callback_data=f"admin_addcat_{c['id']}")] for c in cats]
-            await query.message.reply_text("В какую категорию добавить блюдо?", reply_markup=InlineKeyboardMarkup(kb))
+            await query.message.reply_text("Выберите категорию:", reply_markup=InlineKeyboardMarkup(kb))
 
         elif data.startswith("admin_addcat_"):
             cat_id = data.split("_")[2]
             context.user_data['admin_state'] = 'WAITING_DISH_NAME'
             context.user_data['new_dish'] = {'cat_id': cat_id}
-            await query.message.reply_text("✏️ Введите название нового блюда.\nДля отмены напишите 'отмена'.")
+            await query.message.reply_text("Введите название блюда:")
 
         elif data == "admin_del_dish":
             cats = get_categories()
             kb = [[InlineKeyboardButton(c['name'], callback_data=f"admin_delcat_{c['id']}")] for c in cats]
-            await query.message.reply_text("Из какой категории удалить блюдо?", reply_markup=InlineKeyboardMarkup(kb))
+            await query.message.reply_text("Выберите категорию для удаления блюда:", reply_markup=InlineKeyboardMarkup(kb))
 
         elif data.startswith("admin_delcat_"):
             cat_id = data.split("_")[2]
             items = get_items_by_cat(cat_id)
             if not items:
-                await query.message.reply_text("В этой категории нет блюд.")
+                await query.message.reply_text("Категория пуста.")
                 return
             kb = [[InlineKeyboardButton(i['name'], callback_data=f"admin_delitem_{i['id']}")] for i in items]
-            await query.message.reply_text("🗑 Выберите блюдо для удаления:", reply_markup=InlineKeyboardMarkup(kb))
+            await query.message.reply_text("Выберите блюдо для удаления:", reply_markup=InlineKeyboardMarkup(kb))
 
         elif data.startswith("admin_delitem_"):
             item_id = data.split("_")[2]
             delete_item(item_id)
-            await query.message.reply_text("✅ Блюдо успешно удалено из меню.")
+            await query.message.reply_text("Блюдо удалено.")
 
-        # === ВЫГРУЗКА ИДЕАЛЬНОГО EXCEL ОТЧЕТА ===
+        # === ВЫГРУЗКА EXCEL ОТЧЕТА ===
         elif data == "admin_export_excel":
             orders = get_all_orders_for_export()
             if not orders:
-                await query.answer("Отчет пуст. Оплаченных заказов еще не было.", show_alert=True)
+                await query.answer("Отчет пуст.", show_alert=True)
                 return
             
             filename = f"report_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
@@ -568,17 +584,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     
             with open(filename, 'rb') as doc:
                 caption_text = (
-                    "📊 <b>Ваш отчет по заказам готов!</b>\n\n"
-                    "💡 <b>Как сделать его красивым:</b>\n"
-                    "1. Откройте файл в Excel.\n"
-                    "2. Нажмите <b>Ctrl + A</b> (выделить всё).\n"
-                    "3. Дважды кликните по границе между колонками (например, между A и B наверху).\n"
-                    "<i>Колонки расширятся, и решетки исчезнут!</i>"
+                    "<b>Отчет готов.</b>\n"
+                    "Для автовыравнивания в Excel нажмите Ctrl+A, затем дважды кликните по границе любой колонки сверху."
                 )
                 await context.bot.send_document(chat_id=user_id, document=doc, caption=caption_text, parse_mode='HTML')
             
             os.remove(filename)
-            await query.answer("Отчет сгенерирован!")
+            await query.answer("Отчет отправлен.")
 
         await query.answer()
         return
@@ -586,15 +598,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # НАВИГАЦИЯ
     if data == "home":
         await query.answer()
-        await edit_media_message(user_id, last_msg_id, MAIN_BANNER, "🏠 <b>Главное меню 👇</b>", get_main_keyboard(), context)
+        await edit_media_message(user_id, last_msg_id, MAIN_BANNER, "<b>Главное меню</b>\n\nВыберите нужный раздел для заказа.", get_main_keyboard(), context)
 
     elif data == "nav_drinks":
         await query.answer()
-        await edit_media_message(user_id, last_msg_id, "https://picsum.photos/1200/800?random=30", "<b>🥤 Выберите категорию напитков:</b>", get_drinks_keyboard(), context)
+        await edit_media_message(user_id, last_msg_id, "https://picsum.photos/1200/800?random=30", "<b>Напитки</b>\nВыберите категорию:", get_drinks_keyboard(), context)
 
     elif data == "nav_week":
         await query.answer()
-        await edit_media_message(user_id, last_msg_id, MAIN_BANNER, "<b>🗓 Выберите день для предзаказа обеда:</b>", get_week_menu_keyboard(), context)
+        await edit_media_message(user_id, last_msg_id, MAIN_BANNER, "<b>Недельное меню</b>\nВыберите день для предзаказа:", get_week_menu_keyboard(), context)
 
     # УМНЫЙ ОБЕД ДНЯ
     elif data == "lunch_today":
@@ -605,7 +617,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             cat_id = days_map[weekday]
             data = f"cat_{cat_id}" 
         else:
-            await query.answer("Сегодня выходной! 😴\nВы можете сделать предзаказ через 'Недельное меню'.", show_alert=True)
+            await query.answer("Сегодня выходной. Выберите день через 'Недельное меню'.", show_alert=True)
             return
 
     # ПРОСМОТР КАТЕГОРИЙ 
@@ -617,10 +629,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cat_info = get_category_info(cat_id)
         if not items or not cat_info: return
         
-        caption = f"📋 <b>{cat_info['name']}</b>\n\n"
+        caption = f"<b>{cat_info['name']}</b>\n\n"
         for item in items:
             price_str = f" — {item['price']:,} сум".replace(",", " ") if item['price'] > 0 else ""
-            caption += f"▪️ <b>{item['name']}</b>{price_str}\n<i>{item['description']}</i>\n\n"
+            caption += f"• <b>{item['name']}</b>{price_str}\n<i>{item['description']}</i>\n\n"
 
         await edit_media_message(user_id, last_msg_id, cat_info['banner'], caption, get_category_list_keyboard(user_id, cat_id, items), context)
 
@@ -636,7 +648,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         new_count = get_cart_db(user_id).get(item_id, {}).get('count', 0) + 1
         update_cart_db(user_id, item_id, item['name'], item['price'], new_count)
-        await query.answer(f"Добавлено: {item['name']}")
+        await query.answer()
         
         await context.bot.edit_message_reply_markup(chat_id=user_id, message_id=last_msg_id, reply_markup=get_category_list_keyboard(user_id, cat_id, items))
 
@@ -654,27 +666,25 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if current_count > 0:
             new_count = current_count - 1
             update_cart_db(user_id, item_id, item['name'], item['price'], new_count)
-            await query.answer("Удалено")
+            await query.answer()
             await context.bot.edit_message_reply_markup(chat_id=user_id, message_id=last_msg_id, reply_markup=get_category_list_keyboard(user_id, cat_id, items))
-        else:
-            await query.answer("Этого нет в корзине")
 
     # КОРЗИНА И ВЫБОР ВРЕМЕНИ
     elif data == "cart_list":
         await query.answer()
         items_text, total, _ = get_order_summary(user_id)
         if not items_text:
-            await edit_media_message(user_id, last_msg_id, CART_BANNER, "🛍 <b>Ваша корзина пуста!</b>", get_main_keyboard(), context)
+            await edit_media_message(user_id, last_msg_id, CART_BANNER, "<b>Корзина пуста.</b>", get_main_keyboard(), context)
             return
             
-        caption = f"<b>Ваш заказ:</b>\n\n{items_text}\n\n<b>Итого:</b> {total:,} сум\n\nПерейти к выбору времени и оплате?".replace(",", " ")
-        kb = [[InlineKeyboardButton("✅ Выбрать время и Оплатить", callback_data="select_time")], [InlineKeyboardButton("❌ Очистить", callback_data="cancel_order"), InlineKeyboardButton("🔙 Меню", callback_data="home")]]
+        caption = f"<b>Ваш заказ:</b>\n\n{items_text}\n\n<b>Итого:</b> {total:,} сум\n\nПерейти к оформлению?".replace(",", " ")
+        kb = [[InlineKeyboardButton("Оформить заказ", callback_data="select_time")], [InlineKeyboardButton("Очистить корзину", callback_data="cancel_order"), InlineKeyboardButton("В меню", callback_data="home")]]
         await edit_media_message(user_id, last_msg_id, CART_BANNER, caption, InlineKeyboardMarkup(kb), context)
 
     elif data == "cancel_order":
         await query.answer("Корзина очищена")
         clear_cart_db(user_id)
-        await edit_media_message(user_id, last_msg_id, MAIN_BANNER, "❌ Корзина очищена.", get_main_keyboard(), context)
+        await edit_media_message(user_id, last_msg_id, MAIN_BANNER, "Корзина очищена.", get_main_keyboard(), context)
 
     # --- ВЫБОР ВРЕМЕНИ ДЛЯ САМОВЫВОЗА ---
     elif data == "select_time":
@@ -682,10 +692,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("12:00", callback_data="time_12:00"), InlineKeyboardButton("12:30", callback_data="time_12:30")],
             [InlineKeyboardButton("13:00", callback_data="time_13:00"), InlineKeyboardButton("13:30", callback_data="time_13:30")],
-            [InlineKeyboardButton("🔜 Как будет готово", callback_data="time_ASAP")],
-            [InlineKeyboardButton("🔙 Назад", callback_data="cart_list")]
+            [InlineKeyboardButton("Как будет готово", callback_data="time_ASAP")],
+            [InlineKeyboardButton("Назад в корзину", callback_data="cart_list")]
         ])
-        await edit_media_message(user_id, last_msg_id, CART_BANNER, "🕒 <b>Выберите время, когда вы подниметесь за обедом:</b>\nМы заранее соберем его в контейнеры и отложим для вас!", kb, context)
+        await edit_media_message(user_id, last_msg_id, CART_BANNER, "<b>Выберите время выдачи:</b>\nМы заранее соберем заказ в контейнеры.", kb, context)
 
     # --- ГЕНЕРАЦИЯ ОПЛАТЫ ПОСЛЕ ВЫБОРА ВРЕМЕНИ ---
     elif data.startswith("time_"):
@@ -700,10 +710,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         click_url = f"https://my.click.uz/services/pay/?service_id={CLICK_SERVICE_ID}&merchant_id={CLICK_MERCHANT_ID}&amount={total}"
         
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("💳 Оплатить в Click", url=click_url)], [InlineKeyboardButton("✅ Я оплатил(а)", callback_data="paid_order")]])
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("Оплатить через Click", url=click_url)], [InlineKeyboardButton("Оплата завершена", callback_data="paid_order")]])
         
         formatted_total = f"{total:,}".replace(",", " ")
-        caption = f"🕒 <b>Время выдачи: {selected_time}</b>\n💳 <b>Счёт на {formatted_total} сум!</b>\n\nОбед будет собран и отложен к вашему приходу.\nПерейдите по ссылке или нажмите кнопку для оплаты."
+        caption = f"<b>Счет сформирован</b>\nСумма: {formatted_total} сум\nВремя выдачи: {selected_time}\n\nПожалуйста, перейдите по ссылке для оплаты."
         
         try: await context.bot.delete_message(chat_id=user_id, message_id=last_msg_id)
         except: pass
@@ -732,7 +742,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             customer_name += f" {query.from_user.last_name}"
         username = f" (@{query.from_user.username})" if query.from_user.username else ""
         
-        text = f"✅ <b>Оплачено!</b>\n\n<b>Состав:</b>\n{items_text}\n\n📍 Выдача: 4 этаж\n🕒 Время: <b>{pickup_time}</b>\n\nВаш обед будет собран и отложен к этому времени. Спасибо за заказ!"
+        text = f"<b>Заказ принят в работу!</b>\n\n<b>Состав:</b>\n{items_text}\n\nМесто выдачи: 4 этаж\nВремя: {pickup_time}\n\nСпасибо за заказ."
         try: await context.bot.delete_message(chat_id=user_id, message_id=last_msg_id)
         except: pass
         await context.bot.send_message(chat_id=user_id, text=text, parse_mode='HTML')
@@ -742,12 +752,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             formatted_total = f"{total:,}".replace(",", " ")
             
             admin_text = (
-                f"🚨 <b>Новый заказ (Предзаказ ко времени)!</b>\n"
-                f"👤 Имя: {customer_name}{username}\n"
-                f"📞 Тел: {user[1]}\n"
-                f"🕒 <b>Собрать и отложить к: {pickup_time}</b>\n"
-                f"💰 Сумма: {formatted_total} сум\n\n"
-                f"🍽 <b>Состав:</b>\n{items_text}"
+                f"🚨 <b>Новый заказ!</b>\n"
+                f"Имя: {customer_name}{username}\n"
+                f"Тел: {user[1]}\n"
+                f"Время выдачи: {pickup_time}\n"
+                f"Сумма: {formatted_total} сум\n\n"
+                f"<b>Состав:</b>\n{items_text}"
             )
             try: await context.bot.send_message(chat_id=ADMIN_ID, text=admin_text, parse_mode='HTML')
             except: pass
