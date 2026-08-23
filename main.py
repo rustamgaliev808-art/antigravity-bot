@@ -3,7 +3,7 @@ import logging
 import asyncio
 import sqlite3
 import csv
-from datetime import datetime
+from datetime import datetime, time as t_time
 from collections import Counter
 from aiohttp import web
 from telegram import (
@@ -44,12 +44,14 @@ CLICK_SERVICE_ID = os.getenv("CLICK_SERVICE_ID", "52528")
 CLICK_MERCHANT_ID = os.getenv("CLICK_MERCHANT_ID", "20421")
 QR_FILE_NAME = "qr.jpg"
 
-DB_NAME = os.getenv("DB_NAME", "click_lunch_v6.db")
+DB_NAME = os.getenv("DB_NAME", "click_lunch_v7.db")
 
 MAIN_BANNER = "https://images.unsplash.com/photo-1498837167922-41cfa6f318ba?q=80&w=1200&auto=format&fit=crop"
 CART_BANNER = "https://images.unsplash.com/photo-1556742044-3c52d6e88c62?q=80&w=1200&auto=format&fit=crop"
 LUNCH_BANNER = "https://images.unsplash.com/photo-1543339308-43e59d6b73a6?q=80&w=1200&auto=format&fit=crop"
 MON_BANNER = "https://images.unsplash.com/photo-1548943487-a2e4f43b4850?q=80&w=1200&auto=format&fit=crop"
+FRESH_BANNER = "https://images.unsplash.com/photo-1621506289937-a8e4df240d0b?q=80&w=1200&auto=format&fit=crop"
+DISCOUNT_BANNER = "https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?q=80&w=1200&auto=format&fit=crop"
 
 WEEKDAYS = {
     0: ("mon", "Понедельник"),
@@ -104,6 +106,8 @@ DEFAULT_ITEMS = [
     ("cold_drinks", "🍊 Fanta 0.25", "Апельсиновая газировка.", 12000, ""),
     ("cold_drinks", "🍹 Мохито", "Охлаждающий напиток.", 20000, ""),
     ("cold_drinks", "💧 Chortoq (с газом)", "Минеральная газированная вода.", 12000, ""),
+    ("cold_drinks", "⚡🔞 Энергетик 18+ 0.5", "Тонизирующий напиток", 18000, ""),
+    ("cold_drinks", "🐂 RedBull 0.25", "Классический энергетик в фирменной банке.", 32000, ""),
 
     ("fresh_drinks", "🍎 Яблочный фреш", "Свежевыжатый яблочный сок, 250 мл.", 27000, ""),
     ("fresh_drinks", "🥕 Морковный фреш", "Свежевыжатый морковный сок, 250 мл.", 16000, ""),
@@ -376,7 +380,6 @@ def get_category(cat_id):
     return dict(row) if row else None
 
 
-# ✅ ФИХ #1: id возвращается как str — сравнение в btn() корректно
 def get_items(cat_id):
     conn = _conn()
     rows = conn.execute(
@@ -425,7 +428,6 @@ def get_lunch_config(day_id):
     return (dict(cfg) if cfg else None), [dict(x) for x in hot]
 
 
-# ── Редактирование меню недели из /admin ──
 def update_lunch_hot_dish(hot_id, name, price):
     conn = _conn()
     conn.execute("UPDATE lunch_hot SET name=?, price=? WHERE id=?", (name, price, hot_id))
@@ -597,7 +599,7 @@ def get_all_orders_for_export():
     return [dict(r) for r in rows]
 
 # ============================================================
-# LUNCH SESSION / BUILDING A COMBO
+# LUNCH SESSION
 # ============================================================
 def lunch_session(context):
     return context.user_data.setdefault(
@@ -723,7 +725,6 @@ def kb_lunch_drinks():
 
 
 def kb_time():
-    """Первый экран выбора выдачи: сейчас, отложить или скидка."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🏃 Забрать сейчас", callback_data="tv_Сейчас (В очереди)")],
         [InlineKeyboardButton("🕒 Отложить", callback_data="postpone_time")],
@@ -733,7 +734,6 @@ def kb_time():
 
 
 def kb_postpone_time():
-    """Экран отложенной выдачи: интервалы + своё время."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("11:00", callback_data="tv_11:00"),
          InlineKeyboardButton("12:00", callback_data="tv_12:00"),
@@ -759,7 +759,6 @@ def kb_order_status(order_id, current_status):
     ]])
 
 
-# ── Клавиатуры для редактирования меню недели ──
 def kb_admin_week():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("Пн", callback_data="adm_wday_mon"),
@@ -791,7 +790,6 @@ def kb_admin_day(day_id, cfg, hot):
 # TELEGRAM RENDER
 # ============================================================
 async def send_or_edit(chat_id, msg_id, photo, caption, markup, context):
-    # Безопасная обрезка caption до лимита Telegram для фото (1024 символа)
     if caption and len(caption) > 1020:
         cut = caption[:1017]
         if "<" in cut[900:]:
@@ -840,7 +838,6 @@ async def show_main(chat_id, context):
 # COMMANDS / CONTACT
 # ============================================================
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ✅ ФИХ #3: init_db() убран отсюда — вызывается только в main()
     user_id = update.effective_user.id
     if not get_user(user_id):
         kb = ReplyKeyboardMarkup(
@@ -883,6 +880,7 @@ async def _show_admin_panel(chat_id, context):
         [InlineKeyboardButton("🍽 Сводка для кухни", callback_data="adm_kitchen")],
         [InlineKeyboardButton("📋 Активные заказы", callback_data="adm_orders")],
         [InlineKeyboardButton("✏️ Меню на неделю", callback_data="adm_week")],
+        [InlineKeyboardButton("📤 Посты в канал", callback_data="adm_posts")],
         [InlineKeyboardButton("📢 Рассылка", callback_data="adm_broadcast")],
         [InlineKeyboardButton("➕ Добавить блюдо", callback_data="adm_add"),
          InlineKeyboardButton("🗑 Удалить блюдо", callback_data="adm_del")],
@@ -903,32 +901,136 @@ async def cmd_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if wd >= 5:
         await update.message.reply_text("Сегодня выходной, постов нет.")
         return
+    ok = await _send_lunch_post(context.bot)
+    if ok:
+        await update.message.reply_text(f"✅ Пост «Обеды» опубликован в {CHANNEL_ID}.")
+    else:
+        await update.message.reply_text("❌ Ошибка публикации обедов.")
+
+# ============================================================
+# SHARED POST FUNCTIONS
+# ============================================================
+async def _send_lunch_post(bot) -> bool:
+    wd = local_now().weekday()
+    if wd >= 5:
+        return False
     day_id, day_name = WEEKDAYS[wd]
     cfg, hot = get_lunch_config(day_id)
-    text_lines = [f"<b>🍽 {day_name}</b>", ""]
+    lines = [f"<b>🍱 Комплексный обед — {day_name}</b>", ""]
     for h in hot:
-        text_lines.append(f"{h['emoji']} {h['name']} — {fmt(h['price'])} сум")
+        lines.append(f"{h['emoji']} <b>{h['name']}</b> — {fmt(h['price'])} сум")
     if cfg:
-        text_lines += [
+        lines += [
             "",
             f"🥗 Салат: {cfg['salad']}",
             "🥤 Напиток: Шербет или Айс-ти",
             f"🍚 Гарниры: {cfg['garnish1']} / {cfg['garnish2']} / {cfg['garnish3']}",
+            "",
+            "📍 Место выдачи: 4 этаж, кухня",
+            "🕒 Заказ до 15:00 | Выдача: 11:00–16:00",
         ]
-    bot_info = await context.bot.get_me()
+    bot_info = await bot.get_me()
     markup = InlineKeyboardMarkup([[
         InlineKeyboardButton("🍱 Заказать обед", url=f"https://t.me/{bot_info.username}")
     ]])
     try:
-        await context.bot.send_photo(
+        await bot.send_photo(
             chat_id=CHANNEL_ID,
             photo=MON_BANNER if wd == 0 else LUNCH_BANNER,
-            caption="\n".join(text_lines),
+            caption="\n".join(lines),
             reply_markup=markup, parse_mode="HTML",
         )
-        await update.message.reply_text(f"✅ Пост опубликован в {CHANNEL_ID}.")
+        return True
     except Exception as e:
-        await update.message.reply_text(f"❌ Ошибка: {e}")
+        logging.error(f"[POST LUNCH] Ошибка: {e}")
+        return False
+
+
+async def _send_fresh_post(bot) -> bool:
+    items = get_items("fresh_drinks")
+    if not items:
+        return False
+    lines = ["<b>🍹 Свежевыжатые соки — только сегодня!</b>", ""]
+    for i in items:
+        lines.append(f"{i['name']} — <b>{fmt(i['price'])} сум</b>")
+    lines += [
+        "",
+        "🌿 Всё свежевыжато прямо при вас!",
+        "✅ Натуральные, без сахара и консервантов.",
+        "",
+        "📍 Место выдачи: 4 этаж, кухня",
+    ]
+    bot_info = await bot.get_me()
+    markup = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🍹 Заказать фреш", url=f"https://t.me/{bot_info.username}")
+    ]])
+    try:
+        await bot.send_photo(
+            chat_id=CHANNEL_ID,
+            photo=FRESH_BANNER,
+            caption="\n".join(lines),
+            reply_markup=markup, parse_mode="HTML",
+        )
+        return True
+    except Exception as e:
+        logging.error(f"[POST FRESH] Ошибка: {e}")
+        return False
+
+
+async def _send_discount_post(bot) -> bool:
+    wd = local_now().weekday()
+    if wd >= 5:
+        return False
+    day_id, day_name = WEEKDAYS[wd]
+    cfg, hot = get_lunch_config(day_id)
+    lines = [
+        "🔥 <b>СКИДКА 20% — только сейчас!</b>",
+        "",
+        f"С <b>16:00 до 17:00</b> — скидка <b>20%</b> на комплексные обеды ({day_name})!",
+        "",
+    ]
+    for h in hot:
+        original = h["price"]
+        discounted = int(original * 0.8)
+        lines.append(
+            f"{h['emoji']} {h['name']}\n"
+            f"   <s>{fmt(original)}</s> → <b>{fmt(discounted)} сум</b>"
+        )
+    lines += [
+        "",
+        "⏰ Успей заказать — акция длится <b>1 час</b>!",
+        "📍 Место выдачи: 4 этаж, кухня",
+    ]
+    bot_info = await bot.get_me()
+    markup = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🔥 Заказать со скидкой", url=f"https://t.me/{bot_info.username}")
+    ]])
+    try:
+        await bot.send_photo(
+            chat_id=CHANNEL_ID,
+            photo=DISCOUNT_BANNER,
+            caption="\n".join(lines),
+            reply_markup=markup, parse_mode="HTML",
+        )
+        return True
+    except Exception as e:
+        logging.error(f"[POST DISCOUNT] Ошибка: {e}")
+        return False
+
+
+async def job_post_lunch(context):
+    await _send_lunch_post(context.bot)
+    logging.info("[SCHEDULER] Пост «Обеды» отправлен.")
+
+
+async def job_post_fresh(context):
+    await _send_fresh_post(context.bot)
+    logging.info("[SCHEDULER] Пост «Фреши» отправлен.")
+
+
+async def job_post_discount(context):
+    await _send_discount_post(context.bot)
+    logging.info("[SCHEDULER] Пост «Скидки» отправлен.")
 
 # ============================================================
 # TEXT / PHOTO HANDLERS
@@ -951,7 +1053,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Отменено.")
         return
 
-    # ── Редактирование горячего блюда: "Название / 63000" ──
     if state == "EDIT_HOT":
         hot_id = context.user_data.get("editing_hot_id")
         day_id = context.user_data.get("editing_day_id")
@@ -979,7 +1080,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Редактирование салата ──
     if state == "EDIT_SALAD":
         day_id = context.user_data.get("editing_day_id")
         update_lunch_salad(day_id, text.strip())
@@ -992,7 +1092,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Редактирование гарниров: "Рис, Пюре, Гречка" ──
     if state == "EDIT_GARNISHES":
         day_id = context.user_data.get("editing_day_id")
         parts = [p.strip() for p in text.split(",")]
@@ -1147,7 +1246,6 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     user_id = q.from_user.id
     data = q.data
-    # ✅ ФИХ #3: init_db() убран отсюда
     last = context.user_data.get("last_msg_id", q.message.message_id)
 
     if data == "ignore":
@@ -1189,12 +1287,52 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await q.answer()
 
-        # ── Назад в панель ──
         if data == "adm_back":
             await _show_admin_panel(user_id, context)
             return
 
-        # ── Меню на неделю — выбор дня ──
+        if data == "adm_posts":
+            await q.message.reply_text(
+                "<b>📤 Посты в канал</b>\n\n"
+                "Выберите пост для публикации прямо сейчас.\n\n"
+                "🕒 Автоматически:\n"
+                "• 10:00 → Фреши\n"
+                "• 11:00 → Обеды\n"
+                "• 16:00 → Скидки",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🍱 Пост: Обеды", callback_data="adm_postlunch")],
+                    [InlineKeyboardButton("🍹 Пост: Фреши", callback_data="adm_postfresh")],
+                    [InlineKeyboardButton("🔥 Пост: Скидка 20%", callback_data="adm_postdiscount")],
+                    [InlineKeyboardButton("🔙 Назад", callback_data="adm_back")],
+                ]),
+                parse_mode="HTML",
+            )
+            return
+
+        if data == "adm_postlunch":
+            ok = await _send_lunch_post(context.bot)
+            await q.answer(
+                "✅ Пост «Обеды» опубликован!" if ok else "❌ Ошибка или выходной день.",
+                show_alert=True,
+            )
+            return
+
+        if data == "adm_postfresh":
+            ok = await _send_fresh_post(context.bot)
+            await q.answer(
+                "✅ Пост «Фреши» опубликован!" if ok else "❌ Ошибка публикации.",
+                show_alert=True,
+            )
+            return
+
+        if data == "adm_postdiscount":
+            ok = await _send_discount_post(context.bot)
+            await q.answer(
+                "✅ Пост «Скидки» опубликован!" if ok else "❌ Ошибка или выходной день.",
+                show_alert=True,
+            )
+            return
+
         if data == "adm_week":
             await q.message.reply_text(
                 "<b>✏️ Меню на неделю</b>\n\nВыберите день для редактирования:",
@@ -1202,7 +1340,6 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # ── Выбор конкретного дня ──
         if data.startswith("adm_wday_"):
             day_id = data.split("_", 2)[2]
             cfg, hot = get_lunch_config(day_id)
@@ -1216,7 +1353,6 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # ── Редактировать горячее блюдо ──
         if data.startswith("adm_edithot_"):
             parts = data.split("_")
             hot_id = int(parts[2])
@@ -1239,7 +1375,6 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # ── Редактировать салат ──
         if data.startswith("adm_editsalad_"):
             day_id = data.split("_", 2)[2]
             cfg, _ = get_lunch_config(day_id)
@@ -1254,7 +1389,6 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # ── Редактировать гарниры ──
         if data.startswith("adm_editgarnish_"):
             day_id = data.split("_", 2)[2]
             cfg, _ = get_lunch_config(day_id)
@@ -1622,7 +1756,6 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         markup = kb_category(user_id, cat_id, items)
         session = lunch_session(context)
         if cat_id == "fresh_drinks" and session.get("drink_code") and session.get("garnish"):
-            # ✅ ФИХ #2: list() — tuple не поддерживает append
             rows = list(markup.inline_keyboard[:-1])
             rows.append([
                 InlineKeyboardButton("🛒 Корзина", callback_data="cart_view"),
@@ -1638,7 +1771,6 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         item_id = parts[-1]
         cat_id = "_".join(parts[1:-1])
         items = get_items(cat_id)
-        # ✅ ФИХ #1: get_items() возвращает id как str — сравнение корректно
         item = next((i for i in items if i["id"] == item_id), None)
         if not item:
             await q.answer()
@@ -1741,7 +1873,6 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         components = []
         cart_snapshot = get_cart(user_id)
 
-        # Определяем id фрешей по категории из menu_items
         conn = _conn()
         fresh_ids = {
             str(r["id"]) for r in conn.execute(
@@ -1780,7 +1911,6 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 components.append(("other", item["name"], item["count"], item["price"]))
 
-        # Переклассифицируем фреши из "other" → "fresh"
         components = [
             (
                 "fresh" if item_name in fresh_names and item_type == "other" else item_type,
@@ -1836,13 +1966,11 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # SETUP / SERVER
 # ============================================================
 async def post_init(application: Application):
-    # Команды для всех пользователей
     await application.bot.set_my_commands([
         BotCommand("start", "Главное меню"),
         BotCommand("myid", "Узнать свой Telegram ID"),
     ], scope=BotCommandScopeDefault())
 
-    # /admin и /post — только у администратора в меню
     if ADMIN_ID:
         try:
             await application.bot.set_my_commands([
@@ -1854,13 +1982,25 @@ async def post_init(application: Application):
         except Exception as e:
             logging.warning(f"Не удалось установить команды для админа: {e}")
 
+    # Автопосты: UTC = UZT - 5ч
+    # 10:00 UZT = 05:00 UTC → Фреши
+    # 11:00 UZT = 06:00 UTC → Обеды
+    # 16:00 UZT = 11:00 UTC → Скидки
+    jq = application.job_queue
+    if jq:
+        jq.run_daily(job_post_fresh,    time=t_time(5, 0),  days=(0,1,2,3,4), name="auto_fresh")
+        jq.run_daily(job_post_lunch,    time=t_time(6, 0),  days=(0,1,2,3,4), name="auto_lunch")
+        jq.run_daily(job_post_discount, time=t_time(11, 0), days=(0,1,2,3,4), name="auto_discount")
+        logging.info("[SCHEDULER] Авторасписание постов зарегистрировано.")
+    else:
+        logging.warning("[SCHEDULER] JobQueue недоступна.")
+
 
 async def health(request):
     return web.Response(text="OK")
 
 
 async def main():
-    # ✅ ФИХ #3: init_db() только здесь — один раз при запуске
     init_db()
     if not TOKEN or TOKEN == "ВАШ_ТОКЕН":
         logging.warning("BOT_TOKEN не установлен.")
@@ -1883,6 +2023,8 @@ async def main():
 
     await app_bot.initialize()
     await app_bot.start()
+    if app_bot.job_queue:
+        await app_bot.job_queue.start()
     await app_bot.updater.start_polling()
     logging.info(">>> Бот запущен <<<")
 
