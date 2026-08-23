@@ -38,7 +38,6 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 CHANNEL_ID = os.getenv("CHANNEL_ID", "@your_channel")
 TZ_OFFSET = int(os.getenv("TZ_OFFSET", "5"))
 
-# Click — сохранено по текущей логике проекта.
 CLICK_SERVICE_ID = os.getenv("CLICK_SERVICE_ID", "52528")
 CLICK_MERCHANT_ID = os.getenv("CLICK_MERCHANT_ID", "20421")
 QR_FILE_NAME = "qr.jpg"
@@ -105,7 +104,6 @@ DEFAULT_ITEMS = [
     ("cold_drinks", "🍹 Мохито", "Охлаждающий напиток.", 20000, ""),
     ("cold_drinks", "💧 Chortoq (с газом)", "Минеральная газированная вода.", 12000, ""),
 
-    # Фреши — ровно 6 позиций.
     ("fresh_drinks", "🍎 Яблочный фреш", "Свежевыжатый яблочный сок, 250 мл.", 27000, ""),
     ("fresh_drinks", "🥕 Морковный фреш", "Свежевыжатый морковный сок, 250 мл.", 16000, ""),
     ("fresh_drinks", "❤️ Свекольный фреш", "Свежевыжатый свекольный сок, 250 мл.", 16000, ""),
@@ -114,7 +112,6 @@ DEFAULT_ITEMS = [
     ("fresh_drinks", "🥒🍎 Огурец + Яблоко", "Освежающий микс огурца и яблока, 250 мл.", 26000, ""),
 ]
 
-# Базовые горячие блюда по дням. Гарниры вынесены отдельно.
 DEFAULT_LUNCH = {
     "mon": {
         "hot": [
@@ -122,7 +119,7 @@ DEFAULT_LUNCH = {
             ("🍗", "Куриный казан-кебаб", "Курица с пряностями.", 58000),
         ],
         "salad": "Витаминный салат",
-        "drink": "Шербет или Айс-ти",
+        "drink": "Шербет",
         "garnishes": ["Рис", "Гречка", "Картофель"],
     },
     "tue": {
@@ -131,7 +128,7 @@ DEFAULT_LUNCH = {
             ("🍗", "Куриные котлеты", "Домашние куриные котлеты.", 58000),
         ],
         "salad": "Французский салат",
-        "drink": "Шербет или Айс-ти",
+        "drink": "Айс-ти",
         "garnishes": ["Перловка", "Пюре", "Рис"],
     },
     "wed": {
@@ -140,7 +137,7 @@ DEFAULT_LUNCH = {
             ("🍗", "Куриная отбивная с сыром", "Куриная отбивная под сыром.", 58000),
         ],
         "salad": "Овощной салат",
-        "drink": "Шербет или Айс-ти",
+        "drink": "Шербет",
         "garnishes": ["Рис", "Гречка", "Картофель"],
     },
     "thu": {
@@ -148,8 +145,8 @@ DEFAULT_LUNCH = {
             ("🥩", "Плов из говядины", "Плов из говядины с морковью и специями.", 63000),
             ("🍗", "Куриный Ган-пан", "Курица в фирменной подаче.", 58000),
         ],
-        "salad": "Ачик-чучук",
-        "drink": "Шербет или Айс-ти",
+        "salad": "Ачик-чучук или соленья",
+        "drink": "Айс-ти",
         "garnishes": ["Рис", "Пюре", "Овощи"],
     },
     "fri": {
@@ -158,7 +155,7 @@ DEFAULT_LUNCH = {
             ("🍗", "Курица в соусе карри", "Курица в мягком соусе карри.", 58000),
         ],
         "salad": "Греческий салат",
-        "drink": "Шербет или Айс-ти",
+        "drink": "Шербет",
         "garnishes": ["Рис", "Пюре", "Овощи печёные"],
     },
 }
@@ -167,14 +164,11 @@ DEFAULT_LUNCH = {
 # TIME / HELPERS
 # ============================================================
 def local_now():
-    # Сохраняем простую схему UTC+offset, как в текущем проекте.
     ts = datetime.utcnow().timestamp() + TZ_OFFSET * 3600
     return datetime.utcfromtimestamp(ts)
 
-
 def fmt(amount):
     return f"{amount:,}".replace(",", " ")
-
 
 def current_day():
     return WEEKDAYS.get(local_now().weekday(), ("mon", "Понедельник"))
@@ -186,7 +180,6 @@ def _conn():
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     return conn
-
 
 def init_db():
     conn = _conn()
@@ -282,20 +275,17 @@ def init_db():
     _seed_lunch()
     _ensure_setting("menu_active", "1")
 
-
 def _ensure_setting(key, default):
     conn = _conn()
     conn.execute("INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)", (key, default))
     conn.commit()
     conn.close()
 
-
 def get_setting(key, default=None):
     conn = _conn()
     row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
     conn.close()
     return row["value"] if row else default
-
 
 def set_setting(key, value):
     conn = _conn()
@@ -306,14 +296,11 @@ def set_setting(key, value):
     conn.commit()
     conn.close()
 
-
 def menu_is_active():
     return get_setting("menu_active", "1") == "1"
 
-
 def set_menu_active(active):
     set_setting("menu_active", "1" if active else "0")
-
 
 def _seed_menu():
     conn = _conn()
@@ -327,7 +314,6 @@ def _seed_menu():
         )
     conn.commit()
     conn.close()
-
 
 def _seed_lunch():
     conn = _conn()
@@ -356,7 +342,6 @@ def get_user(user_id):
     conn.close()
     return row
 
-
 def add_user(user_id, phone):
     conn = _conn()
     conn.execute(
@@ -366,13 +351,11 @@ def add_user(user_id, phone):
     conn.commit()
     conn.close()
 
-
 def get_all_user_ids():
     conn = _conn()
     rows = conn.execute("SELECT user_id FROM users").fetchall()
     conn.close()
     return [r["user_id"] for r in rows]
-
 
 def get_all_categories():
     conn = _conn()
@@ -380,13 +363,11 @@ def get_all_categories():
     conn.close()
     return [{"id": r["id"], "name": r["name"]} for r in rows]
 
-
 def get_category(cat_id):
     conn = _conn()
     row = conn.execute("SELECT * FROM menu_categories WHERE id=?", (cat_id,)).fetchone()
     conn.close()
     return dict(row) if row else None
-
 
 def get_items(cat_id):
     conn = _conn()
@@ -397,7 +378,6 @@ def get_items(cat_id):
     conn.close()
     return [dict(r) for r in rows]
 
-
 def add_dish(cat_id, name, desc, price, photo):
     conn = _conn()
     conn.execute(
@@ -407,14 +387,12 @@ def add_dish(cat_id, name, desc, price, photo):
     conn.commit()
     conn.close()
 
-
 def delete_dish(item_id):
     conn = _conn()
     conn.execute("DELETE FROM menu_items WHERE id=?", (item_id,))
     conn.execute("DELETE FROM cart WHERE item_id=?", (str(item_id),))
     conn.commit()
     conn.close()
-
 
 def get_lunch_config(day_id):
     conn = _conn()
@@ -425,7 +403,6 @@ def get_lunch_config(day_id):
     ).fetchall()
     conn.close()
     return (dict(cfg) if cfg else None), [dict(x) for x in hot]
-
 
 def get_cart(user_id):
     conn = _conn()
@@ -438,7 +415,6 @@ def get_cart(user_id):
         r["item_id"]: {"name": r["item_name"], "price": r["price"], "count": r["count"]}
         for r in rows
     }
-
 
 def update_cart(user_id, item_id, item_name, price, count):
     conn = _conn()
@@ -453,13 +429,11 @@ def update_cart(user_id, item_id, item_name, price, count):
     conn.commit()
     conn.close()
 
-
 def clear_cart(user_id):
     conn = _conn()
     conn.execute("DELETE FROM cart WHERE user_id=?", (user_id,))
     conn.commit()
     conn.close()
-
 
 def get_cart_summary(user_id):
     cart = get_cart(user_id)
@@ -512,7 +486,6 @@ def create_order(user_id, items_str, total, pickup_time, discount_amount=0, comp
     conn.close()
     return order_id
 
-
 def set_order_status(order_id, status):
     if status not in ORDER_STATUSES:
         return False
@@ -522,13 +495,11 @@ def set_order_status(order_id, status):
     conn.close()
     return True
 
-
 def get_order(order_id):
     conn = _conn()
     row = conn.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchone()
     conn.close()
     return dict(row) if row else None
-
 
 def get_active_orders():
     conn = _conn()
@@ -538,7 +509,6 @@ def get_active_orders():
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
-
 
 def get_today_stats():
     today = local_now().strftime("%Y-%m-%d")
@@ -550,9 +520,7 @@ def get_today_stats():
     conn.close()
     return row["cnt"], row["total"]
 
-
 def get_kitchen_summary():
-    """Надежная сводка из order_items, без разбора строки заказа."""
     today = local_now().strftime("%Y-%m-%d")
     conn = _conn()
     rows = conn.execute(
@@ -564,7 +532,6 @@ def get_kitchen_summary():
     ).fetchall()
     conn.close()
     return [(r["item_type"], r["item_name"], r["qty"]) for r in rows]
-
 
 def get_all_orders_for_export():
     conn = _conn()
@@ -593,7 +560,6 @@ def lunch_session(context):
         },
     )
 
-
 def reset_lunch_session(context):
     context.user_data["lunch"] = {
         "day_id": None,
@@ -605,7 +571,6 @@ def reset_lunch_session(context):
         "drink_code": None,
         "drink_name": None,
     }
-
 
 def lunch_combo_item_id(session):
     if (
@@ -620,13 +585,11 @@ def lunch_combo_item_id(session):
         f"_g{session['garnish_index']}_{session['drink_code']}"
     )
 
-
 def lunch_combo_name(cfg, session):
     return (
         f"🍱 {session['hot_name']} + {session['garnish']} + "
         f"{cfg['salad']} + {session['drink_name']}"
     )
-
 
 def get_garnish_by_index(cfg, index):
     mapping = {
@@ -648,7 +611,6 @@ def kb_main():
         [InlineKeyboardButton("🛒 Корзина", callback_data="cart_view")],
     ])
 
-
 def kb_drinks():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("☕ Горячие напитки", callback_data="cat_hot_drinks")],
@@ -656,7 +618,6 @@ def kb_drinks():
         [InlineKeyboardButton("🍹 Фреши", callback_data="cat_fresh_drinks")],
         [InlineKeyboardButton("🔙 Назад", callback_data="home")],
     ])
-
 
 def kb_week():
     return InlineKeyboardMarkup([
@@ -667,7 +628,6 @@ def kb_week():
          InlineKeyboardButton("Пт", callback_data="day_fri")],
         [InlineKeyboardButton("🔙 Назад", callback_data="home")],
     ])
-
 
 def kb_category(user_id, cat_id, items):
     cart = get_cart(user_id)
@@ -692,17 +652,13 @@ def kb_category(user_id, cat_id, items):
     ])
     return InlineKeyboardMarkup(rows)
 
-
 def kb_lunch_hot(hot_items):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(f"{h['emoji']} {h['name']} — {fmt(h['price'])} сум", callback_data=f"lh_{h['id']}")]
         for h in hot_items
     ] + [[InlineKeyboardButton("🔙 В меню", callback_data="home")]])
 
-
 def kb_lunch_garnishes(cfg):
-    # В callback_data передаём номер гарнира, а не его название.
-    # Это гарантирует корректный разбор независимо от языка/эмодзи/пробелов в названии.
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(f"🍚 {cfg['garnish1']}", callback_data="lg_1")],
         [InlineKeyboardButton(f"🌾 {cfg['garnish2']}", callback_data="lg_2")],
@@ -717,7 +673,6 @@ def kb_lunch_drinks():
         [InlineKeyboardButton("🔙 Назад к гарнирам", callback_data="lunch_drink_back")],
     ])
 
-
 def kb_time():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🏃 Забрать сейчас", callback_data="tv_Сейчас (В очереди)")],
@@ -731,7 +686,6 @@ def kb_time():
         [InlineKeyboardButton("✍️ Своё время", callback_data="time_custom")],
         [InlineKeyboardButton("🔙 Назад в корзину", callback_data="cart_view")],
     ])
-
 
 def kb_order_status(order_id, current_status):
     flow = ["paid", "cooking", "ready", "delivered"]
@@ -790,7 +744,6 @@ async def send_or_edit(chat_id, msg_id, photo, caption, markup, context):
         )
         context.user_data["last_msg_id"] = msg.message_id
 
-
 async def show_main(chat_id, context):
     await send_or_edit(
         chat_id,
@@ -822,20 +775,17 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await show_main(user_id, context)
 
-
 async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.contact:
         add_user(update.effective_user.id, update.message.contact.phone_number)
         await update.message.reply_text("✅ Номер сохранён!", reply_markup=ReplyKeyboardRemove())
         await show_main(update.effective_user.id, context)
 
-
 async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"<b>Ваш Telegram ID:</b>\n<code>{update.effective_user.id}</code>",
         parse_mode="HTML",
     )
-
 
 async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -852,7 +802,6 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("⛔ Вкл/Выкл приём заказов", callback_data="adm_toggle")],
     ])
     await update.message.reply_text("👑 <b>Панель администратора</b>", reply_markup=kb, parse_mode="HTML")
-
 
 async def cmd_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -936,7 +885,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _save_dish(context)
         await update.message.reply_text("✅ Блюдо добавлено!")
 
-
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -948,12 +896,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _save_dish(context)
         await update.message.reply_text("✅ Блюдо добавлено!")
 
-
 def _save_dish(context):
     d = context.user_data.get("new_dish", {})
     add_dish(d.get("cat_id", ""), d.get("name", ""), d.get("desc", ""), d.get("price", 0), d.get("photo", ""))
     context.user_data["state"] = None
-
 
 async def _do_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users = get_all_user_ids()
@@ -974,7 +920,7 @@ async def _do_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.edit_text(f"✅ Рассылка завершена! Доставлено: <b>{count}</b>", parse_mode="HTML")
 
 # ============================================================
-# PAYMENT — ПО ТЕКУЩЕЙ ЛОГИКЕ ПРОЕКТА, НЕ МЕНЯЕМ
+# PAYMENT 
 # ============================================================
 async def _show_payment(source, context, user_id, pickup_time, discount=False, reply=False):
     lines, lunch_total, other_total, _ = get_cart_summary(user_id)
@@ -1371,14 +1317,12 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session["drink_name"] = drink_name
         combo_id = lunch_combo_item_id(session)
         combo_name = lunch_combo_name(cfg, session)
-        update_cart(user_id, combo_id, combo_name, session["hot_price"], 1)
+        
+        # FIX 3: Учет количества одинаковых комплексов
+        current_cart = get_cart(user_id)
+        current_count = current_cart.get(combo_id, {}).get("count", 0)
+        update_cart(user_id, combo_id, combo_name, session["hot_price"], current_count + 1)
 
-        context.user_data["lunch_components"] = [
-            ("hot", session["hot_name"], 1, session["hot_price"]),
-            ("garnish", session["garnish"], 1, 0),
-            ("salad", cfg["salad"], 1, 0),
-            ("drink", drink_name, 1, 0),
-        ]
         await q.answer(f"✅ {drink_name}")
         await send_or_edit(
             user_id,
@@ -1428,14 +1372,15 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         caption = caption[:4000]
         markup = kb_category(user_id, cat_id, items)
-        # Если пользователь пришёл из собранного комплекса, позволяем вернуться
-        # прямо к готовому комплексу, не теряя выбранные горячее/гарнир/напиток.
+        
         session = lunch_session(context)
         if cat_id == "fresh_drinks" and session.get("drink_code") and session.get("garnish"):
-            rows = markup.inline_keyboard[:-1]
+            # FIX 2: Оборачиваем tuple в list для безопасного append
+            rows = list(markup.inline_keyboard[:-1])
             rows.append([InlineKeyboardButton("🛒 Корзина", callback_data="cart_view"),
                          InlineKeyboardButton("🔙 К комплексу", callback_data="lunch_combo_done")])
             markup = InlineKeyboardMarkup(rows)
+            
         await send_or_edit(user_id, last, cat["banner"], caption, markup, context)
         return
 
@@ -1528,7 +1473,6 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data == "paid":
-        # Оплата оставлена по текущей логике проекта: пользователь подтверждает оплату кнопкой.
         await q.answer()
         lines, lunch, other, items_str = get_cart_summary(user_id)
         if not lines:
@@ -1565,7 +1509,6 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 components.append(("other", item["name"], item["count"], item["price"]))
 
-        # Фреши определяем по категории menu_items, а не по названию.
         conn = _conn()
         fresh_ids = {str(r["id"]) for r in conn.execute(
             "SELECT id FROM menu_items WHERE cat_id='fresh_drinks'"
@@ -1583,7 +1526,6 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         clear_cart(user_id)
         reset_lunch_session(context)
-        context.user_data["lunch_components"] = []
 
         name = q.from_user.first_name + (f" {q.from_user.last_name}" if q.from_user.last_name else "")
         username = f" (@{q.from_user.username})" if q.from_user.username else ""
@@ -1633,10 +1575,8 @@ async def post_init(application: Application):
         BotCommand("myid", "Узнать свой Telegram ID"),
     ])
 
-
 async def health(request):
     return web.Response(text="OK")
-
 
 async def main():
     init_db()
@@ -1666,7 +1606,6 @@ async def main():
 
     while True:
         await asyncio.sleep(3600)
-
 
 if __name__ == "__main__":
     try:
