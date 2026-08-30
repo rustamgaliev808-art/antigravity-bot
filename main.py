@@ -58,7 +58,7 @@ def asset_path(*parts):
 
 
 WEEK_POSTERS = {
-    "mon": asset_path("posts", "monday-menu-poster-v2-ai.png"),
+    "mon": asset_path("posts", "monday-menu-poster-v3-ai.png"),
     "tue": asset_path("posts", "tuesday-menu-poster-ai.png"),
     "wed": asset_path("posts", "wednesday-menu-poster-ai.png"),
     "thu": asset_path("posts", "thursday-menu-poster-ai.png"),

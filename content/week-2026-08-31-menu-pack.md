@@ -5,7 +5,7 @@
 
 ## Понедельник, 31 августа
 
-Постер: `assets/posts/monday-menu-poster-v2-ai.png`
+Постер: `assets/posts/monday-menu-poster-v3-ai.png`
 
 🍽 <b>Обед на понедельник — 31 августа</b>
 

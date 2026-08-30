@@ -2,7 +2,7 @@
 
 ## Фотографии
 
-- `assets/posts/monday-menu-poster-v2-ai.png` — актуальный рекламный постер понедельника с отдельными ценами блюд.
+- `assets/posts/monday-menu-poster-v3-ai.png` — актуальный рекламный постер понедельника с отдельными ценами блюд.
 - `assets/menu/monday/beef-with-vegetables-ai.png` — говядина с овощами.
 - `assets/menu/monday/chicken-kazan-kebab-ai.png` — куриный казан-кебаб.
 - `assets/menu/monday/vitamin-salad-ai.png` — витаминный салат.
