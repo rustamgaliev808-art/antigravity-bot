@@ -9,7 +9,7 @@ import json
 import re
 from io import BytesIO, StringIO
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from datetime import datetime, time as t_time, timedelta, timezone
 from aiohttp import web
 import qrcode
@@ -59,6 +59,8 @@ ORDER_CHANNEL_ID = (
     else _order_channel_id
 )
 TZ_OFFSET = int(os.getenv("TZ_OFFSET", "5"))
+CLICK_SERVICE_ID = os.getenv("CLICK_SERVICE_ID", "52528").strip()
+CLICK_MERCHANT_ID = os.getenv("CLICK_MERCHANT_ID", "20421").strip()
 
 DB_NAME = os.getenv("DB_NAME", "click_lunch_v6.db")
 
@@ -274,6 +276,21 @@ def local_now():
 
 def fmt(amount):
     return f"{amount:,}".replace(",", " ")
+
+
+def get_click_payment_url(amount):
+    query = urlencode({
+        "service_id": CLICK_SERVICE_ID,
+        "merchant_id": CLICK_MERCHANT_ID,
+        "amount": int(max(0, amount)),
+    })
+    return f"https://my.click.uz/services/pay/?{query}"
+
+
+def kb_click_payment(amount):
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("💳 Оплатить через Click", url=get_click_payment_url(amount)),
+    ]])
 
 
 def esc(value):
@@ -1532,18 +1549,26 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"📍 Место выдачи: 4 этаж, кухня\n"
         f"📅 Дата: {display_date(pickup_date)}\n"
         f"🕒 Время: {pickup_time}\n"
-        f"💰 К оплате при получении: {fmt(final_total)} сум\n\n"
+        f"💰 К оплате через Click: {fmt(final_total)} сум\n\n"
         f"⭐ Списано бонусов: {fmt(points_used)}\n"
         f"⭐ Будет начислено после выдачи: +{fmt(points_earned)}\n"
         f"⭐ Текущий баланс: {fmt(balance_after)} бонусов\n\n"
-        "📱 Покажите QR‑код сотруднику при получении."
+        "Нажмите кнопку оплаты ниже, затем покажите QR‑код сотруднику при получении."
     )
+    payment_markup = kb_click_payment(final_total)
     try:
-        await context.bot.send_photo(chat_id=user.id, photo=qr_image, caption=confirmation, parse_mode="HTML")
+        await context.bot.send_photo(
+            chat_id=user.id,
+            photo=qr_image,
+            caption=confirmation,
+            reply_markup=payment_markup,
+            parse_mode="HTML",
+        )
     except Exception:
         await context.bot.send_message(
             chat_id=user.id,
             text=confirmation + f"\n\nQR: {pickup_link}",
+            reply_markup=payment_markup,
             parse_mode="HTML",
         )
 
@@ -1557,7 +1582,7 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"🚨 <b>Новый заказ #{order_id} из Mini App!</b>\n"
             f"👤 {full_name}{username}\n📞 {esc(phone)}\n"
             f"📅 {display_date(pickup_date)}\n🕒 {pickup_time}\n"
-            f"💰 {fmt(final_total)} сум — оплата при получении\n"
+            f"💰 {fmt(final_total)} сум — ссылка Click отправлена клиенту\n"
             f"⭐ Списано бонусов: {fmt(points_used)}\n"
             f"⭐ Будет начислено после выдачи: {fmt(points_earned)}\n\n"
             f"<b>Состав:</b>\n{lines}"
@@ -1761,7 +1786,7 @@ async def _do_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await msg.edit_text(f"✅ Рассылка завершена! Доставлено: <b>{count}</b>", parse_mode="HTML")
 
 # ============================================================
-# CHECKOUT — ОПЛАТА ПРИ ПОЛУЧЕНИИ
+# CHECKOUT — ОПЛАТА ЧЕРЕЗ CLICK
 # ============================================================
 async def _show_checkout(source, context, user_id, pickup_time, discount=False, reply=False):
     lines, lunch_total, other_total, items_str = get_cart_summary(user_id)
@@ -1817,7 +1842,8 @@ async def _show_checkout(source, context, user_id, pickup_time, discount=False, 
 
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton(points_btn, callback_data=points_callback)],
-        [InlineKeyboardButton("✅ Подтвердить заказ", callback_data="confirm_order")],
+        [InlineKeyboardButton("💳 Перейти к оплате в Click", url=get_click_payment_url(final))],
+        [InlineKeyboardButton("✅ Я оплатил(а) — подтвердить заказ", callback_data="confirm_order")],
         [InlineKeyboardButton("🔙 Назад", callback_data="select_time")],
     ])
     discount_line = f"\n🔥 Скидка на обеды: -{fmt(disc_amt)} сум" if disc_amt else ""
@@ -1827,8 +1853,8 @@ async def _show_checkout(source, context, user_id, pickup_time, discount=False, 
         f"🕒 Время выдачи: <b>{pickup_time}</b>\n"
         f"⭐ Бонусов используется: {fmt(current_points)}"
         f"{discount_line}\n"
-        f"💰 К оплате при получении: <b>{fmt(final)} сум</b>\n\n"
-        f"Онлайн-оплата временно отключена. Оплатите заказ сотруднику при получении."
+        f"💰 К оплате через Click: <b>{fmt(final)} сум</b>\n\n"
+        f"Перейдите в Click, завершите оплату, затем вернитесь и подтвердите заказ."
     )
     last_mid = context.user_data.get("last_msg_id")
     try:
@@ -2662,7 +2688,7 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📍 Место выдачи: 4 этаж, кухня\n"
             f"📅 Дата: {display_date(pickup_date)}\n"
             f"🕒 Время: {pickup_time}\n"
-            f"💰 К оплате при получении: {fmt(final)} сум\n\n"
+            f"💰 Оплата через Click: {fmt(final)} сум\n\n"
             f"⭐ Списано бонусов: {fmt(points_used)}\n"
             f"⭐ Будет начислено после выдачи: +{fmt(points_earned)}\n"
             f"⭐ Текущий баланс: {fmt(balance_after)} бонусов\n\n"
@@ -2690,7 +2716,7 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🚨 <b>Новый заказ #{order_id}!</b>\n"
                 f"👤 {name}{username}\n📞 {esc(phone)}\n"
                 f"📅 {display_date(pickup_date)}\n🕒 {pickup_time}\n"
-                f"💰 {fmt(final)} сум — оплата при получении\n"
+                f"💰 {fmt(final)} сум — клиент подтвердил оплату через Click\n"
                 f"⭐ Списано баллов: {fmt(points_used)}\n"
                 f"⭐ Будет начислено после выдачи: {fmt(points_earned)}\n\n"
                 f"<b>Состав:</b>\n{lines}"
