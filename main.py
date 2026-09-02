@@ -5,6 +5,8 @@ import sqlite3
 import csv
 import secrets
 import html
+import json
+import re
 from io import BytesIO, StringIO
 from pathlib import Path
 from urllib.parse import quote
@@ -18,6 +20,7 @@ from telegram import (
     BotCommand,
     InputMediaPhoto,
     KeyboardButton,
+    WebAppInfo,
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
 )
@@ -45,6 +48,16 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 TOKEN = os.getenv("BOT_TOKEN", "ВАШ_ТОКЕН")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 CHANNEL_ID = os.getenv("CHANNEL_ID", "@your_channel")
+MINIAPP_URL = os.getenv(
+    "MINIAPP_URL",
+    "https://click-lunch-tashkent.click-ai-c-l-0087.chatgpt.site",
+).strip()
+_order_channel_id = os.getenv("ORDER_CHANNEL_ID", "").strip()
+ORDER_CHANNEL_ID = (
+    int(_order_channel_id)
+    if _order_channel_id.lstrip("-").isdigit()
+    else _order_channel_id
+)
 TZ_OFFSET = int(os.getenv("TZ_OFFSET", "5"))
 
 DB_NAME = os.getenv("DB_NAME", "click_lunch_v6.db")
@@ -1054,6 +1067,17 @@ def get_garnish_by_index(cfg, index):
 # ============================================================
 # KEYBOARDS
 # ============================================================
+def kb_miniapp():
+    """Постоянная кнопка запуска Mini App в личном чате с ботом."""
+    if not MINIAPP_URL.startswith("https://"):
+        return None
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton("🍽 Открыть меню", web_app=WebAppInfo(url=MINIAPP_URL))]],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+
+
 def kb_main():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🍱 Комплексный обед сегодня", callback_data="lunch_today")],
@@ -1331,6 +1355,11 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
         )
         return
+    if kb_miniapp():
+        await update.message.reply_text(
+            "🍽 Новое удобное меню доступно по кнопке ниже.",
+            reply_markup=kb_miniapp(),
+        )
     await show_main(user_id, context)
 
 
@@ -1343,8 +1372,205 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         add_user(update.effective_user.id, contact.phone_number)
-        await update.message.reply_text("✅ Спасибо! Номер сохранён. Теперь можно заказывать 👌", reply_markup=ReplyKeyboardRemove())
+        await update.message.reply_text(
+            "✅ Спасибо! Номер сохранён. Теперь можно заказывать 👌",
+            reply_markup=kb_miniapp() or ReplyKeyboardRemove(),
+        )
         await show_main(update.effective_user.id, context)
+
+
+async def cmd_app(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not MINIAPP_URL:
+        await update.message.reply_text("Мини‑приложение ещё не опубликовано.")
+        return
+    await update.message.reply_text(
+        "Нажмите кнопку, чтобы открыть меню и оформить заказ 👇",
+        reply_markup=kb_miniapp(),
+    )
+
+
+async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Принимает заказ из Mini App и заново рассчитывает его по меню в БД."""
+    message = update.effective_message
+    user = update.effective_user
+    if not message or not message.web_app_data or not user:
+        return
+    if not get_user(user.id):
+        await message.reply_text(
+            "Сначала поделитесь своим номером через /start, затем откройте меню снова.",
+        )
+        return
+    if not menu_is_active():
+        await message.reply_text("😔 Приём заказов сейчас приостановлен. Попробуйте немного позже.")
+        return
+
+    try:
+        raw = message.web_app_data.data
+        if len(raw.encode("utf-8")) > 4096:
+            raise ValueError("payload is too large")
+        payload = json.loads(raw)
+        if payload.get("type") != "miniapp_order" or payload.get("version") != 1:
+            raise ValueError("unsupported payload")
+
+        request_token = str(payload.get("request_token") or "")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{8,80}", request_token):
+            raise ValueError("invalid request token")
+
+        pickup_date = str(payload.get("pickup_date") or "")
+        pickup_day = datetime.strptime(pickup_date, "%Y-%m-%d").date()
+        days_ahead = (pickup_day - local_now().date()).days
+        if days_ahead < 0 or days_ahead > 14 or pickup_day.weekday() > 4:
+            raise ValueError("invalid pickup date")
+
+        pickup_time = str(payload.get("pickup_time") or "")
+        selected_time = datetime.strptime(pickup_time, "%H:%M").time()
+        if selected_time < t_time(11, 0) or selected_time > t_time(16, 0):
+            raise ValueError("invalid pickup time")
+        if not pickup_time_is_available(pickup_date, selected_time):
+            raise ValueError("pickup time has passed")
+
+        items = payload.get("items")
+        if not isinstance(items, list) or not 1 <= len(items) <= 10:
+            raise ValueError("invalid items")
+        use_points = payload.get("use_points", False)
+        if not isinstance(use_points, bool):
+            raise ValueError("invalid points option")
+
+        expected_day_id = {0: "mon", 1: "tue", 2: "wed", 3: "thu", 4: "fri"}[pickup_day.weekday()]
+        detail_lines = []
+        short_names = []
+        components = []
+        total = 0
+        total_quantity = 0
+
+        for item in items:
+            if not isinstance(item, dict) or item.get("day_id") != expected_day_id:
+                raise ValueError("menu day mismatch")
+            hot_name = str(item.get("hot_name") or "")
+            garnish = str(item.get("garnish") or "")
+            drink_code = str(item.get("drink_code") or "")
+            with_salad = item.get("with_salad")
+            quantity = int(item.get("quantity") or 0)
+            if quantity < 1 or quantity > 5 or not isinstance(with_salad, bool):
+                raise ValueError("invalid item options")
+
+            cfg, hot_items = get_lunch_config(expected_day_id)
+            hot = next((candidate for candidate in hot_items if candidate["name"] == hot_name), None)
+            allowed_garnishes = {cfg["garnish1"], cfg["garnish2"], cfg["garnish3"]} if cfg else set()
+            drink_name = LUNCH_DRINKS.get(drink_code)
+            if not cfg or not hot or garnish not in allowed_garnishes or not drink_name:
+                raise ValueError("menu item is no longer available")
+
+            item_total = int(hot["price"]) * quantity
+            total += item_total
+            total_quantity += quantity
+            if total > 2_000_000 or total_quantity > 10:
+                raise ValueError("order limit exceeded")
+
+            options = [garnish]
+            if with_salad:
+                options.append(cfg["salad"])
+            else:
+                options.append("без салата")
+            if drink_code != "none":
+                options.append(drink_name)
+            else:
+                options.append("без напитка")
+
+            detail_lines.append(
+                f"• <b>{esc(hot['name'])}</b> ×{quantity} — <b>{fmt(item_total)} сум</b>\n"
+                f"  └ {esc(' · '.join(options))}"
+            )
+            short_names.append(f"{hot['name']} + {' + '.join(options)} x{quantity}")
+            components.extend([
+                ("hot", hot["name"], quantity, hot["price"]),
+                ("garnish", garnish, quantity, 0),
+            ])
+            if with_salad:
+                components.append(("salad", cfg["salad"], quantity, 0))
+            if drink_code != "none":
+                components.append(("drink", drink_name, quantity, 0))
+
+        if total <= 0:
+            raise ValueError("empty order")
+    except (TypeError, ValueError, KeyError, json.JSONDecodeError):
+        logging.warning("Отклонены некорректные данные Mini App от пользователя %s", user.id)
+        await message.reply_text(
+            "⚠️ Не удалось проверить заказ. Откройте меню заново и повторите оформление.",
+        )
+        return
+
+    request_token = f"miniapp:{user.id}:{request_token}"
+    items_str = ", ".join(short_names)
+    available_points = get_points_balance(user.id)
+    points_to_use = (
+        min(available_points, int(total * POINTS_MAX_USE_RATE))
+        if use_points else 0
+    )
+    final_total = max(0, total - points_to_use)
+    order_id, points_used, points_earned, qr_token, created = create_order(
+        user.id,
+        items_str,
+        final_total,
+        pickup_time,
+        pickup_date,
+        request_token,
+        components=components,
+        points_used=points_to_use,
+    )
+    if not created:
+        await message.reply_text(f"ℹ️ Заказ #{order_id} уже был создан. Повторное оформление не выполнено.")
+        return
+
+    lines = "\n".join(detail_lines)
+    balance_after = get_points_balance(user.id)
+    bot_info = await context.bot.get_me()
+    pickup_link = get_pickup_link(bot_info.username, qr_token)
+    qr_image = build_qr_image(pickup_link)
+    confirmation = (
+        f"<b>✅ Заказ #{order_id} принят!</b>\n\n{lines}\n\n"
+        f"📍 Место выдачи: 4 этаж, кухня\n"
+        f"📅 Дата: {display_date(pickup_date)}\n"
+        f"🕒 Время: {pickup_time}\n"
+        f"💰 К оплате при получении: {fmt(final_total)} сум\n\n"
+        f"⭐ Списано бонусов: {fmt(points_used)}\n"
+        f"⭐ Будет начислено после выдачи: +{fmt(points_earned)}\n"
+        f"⭐ Текущий баланс: {fmt(balance_after)} бонусов\n\n"
+        "📱 Покажите QR‑код сотруднику при получении."
+    )
+    try:
+        await context.bot.send_photo(chat_id=user.id, photo=qr_image, caption=confirmation, parse_mode="HTML")
+    except Exception:
+        await context.bot.send_message(
+            chat_id=user.id,
+            text=confirmation + f"\n\nQR: {pickup_link}",
+            parse_mode="HTML",
+        )
+
+    order_notification_chat_id = ORDER_CHANNEL_ID or ADMIN_ID
+    if order_notification_chat_id:
+        user_row = get_user(user.id)
+        phone = user_row["phone"] if user_row else "нет"
+        full_name = esc(user.full_name or user.first_name or "Клиент")
+        username = f" (@{esc(user.username)})" if user.username else ""
+        admin_text = (
+            f"🚨 <b>Новый заказ #{order_id} из Mini App!</b>\n"
+            f"👤 {full_name}{username}\n📞 {esc(phone)}\n"
+            f"📅 {display_date(pickup_date)}\n🕒 {pickup_time}\n"
+            f"💰 {fmt(final_total)} сум — оплата при получении\n"
+            f"⭐ Списано бонусов: {fmt(points_used)}\n"
+            f"⭐ Будет начислено после выдачи: {fmt(points_earned)}\n\n"
+            f"<b>Состав:</b>\n{lines}"
+        )
+        try:
+            await context.bot.send_message(
+                chat_id=order_notification_chat_id,
+                text=admin_text,
+                reply_markup=kb_order_status(order_id, "new"),
+                parse_mode="HTML",
+            )
+        except Exception:
+            logging.exception("Не удалось отправить уведомление о заказе #%s", order_id)
 
 
 async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2456,7 +2682,8 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["request_token"] = None
         context.user_data["checkout_snapshot"] = None
 
-        if ADMIN_ID:
+        order_notification_chat_id = ORDER_CHANNEL_ID or ADMIN_ID
+        if order_notification_chat_id:
             user_row = get_user(user_id)
             phone = user_row["phone"] if user_row else "нет"
             adm_txt = (
@@ -2470,13 +2697,16 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             try:
                 await context.bot.send_message(
-                    chat_id=ADMIN_ID,
+                    chat_id=order_notification_chat_id,
                     text=adm_txt,
                     reply_markup=kb_order_status(order_id, "new"),
                     parse_mode="HTML",
                 )
             except Exception:
-                pass
+                logging.exception(
+                    "Не удалось отправить уведомление о заказе #%s",
+                    order_id,
+                )
         return
 
     await q.answer()
@@ -2487,6 +2717,7 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def post_init(application: Application):
     await application.bot.set_my_commands([
         BotCommand("start", "Главное меню"),
+        BotCommand("app", "Открыть мини‑приложение"),
         BotCommand("admin", "Панель администратора"),
         BotCommand("post", "Опубликовать пост в канал"),
         BotCommand("myid", "Узнать свой Telegram ID"),
@@ -2515,10 +2746,12 @@ async def main():
     app_bot = Application.builder().token(TOKEN).post_init(post_init).build()
 
     app_bot.add_handler(CommandHandler("start", cmd_start))
+    app_bot.add_handler(CommandHandler("app", cmd_app))
     app_bot.add_handler(CommandHandler("admin", cmd_admin))
     app_bot.add_handler(CommandHandler("post", cmd_post))
     app_bot.add_handler(CommandHandler("myid", cmd_myid))
     app_bot.add_handler(MessageHandler(filters.CONTACT, handle_contact))
+    app_bot.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_web_app_data))
     app_bot.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app_bot.add_handler(CallbackQueryHandler(btn))
