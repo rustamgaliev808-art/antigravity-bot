@@ -1461,7 +1461,7 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         if len(raw.encode("utf-8")) > 4096:
             raise ValueError("payload is too large")
         payload = json.loads(raw)
-        if payload.get("type") != "miniapp_order" or payload.get("version") != 1:
+        if payload.get("type") != "miniapp_order" or payload.get("version") not in {1, 2}:
             raise ValueError("unsupported payload")
 
         request_token = str(payload.get("request_token") or "")
@@ -1502,21 +1502,55 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         total_quantity = 0
 
         for item in items:
-            if not isinstance(item, dict) or item.get("day_id") != expected_day_id:
+            if not isinstance(item, dict):
+                raise ValueError("invalid item")
+            quantity = int(item.get("quantity") or 0)
+            if quantity < 1 or quantity > 5:
+                raise ValueError("invalid item quantity")
+
+            item_type = str(item.get("item_type") or "lunch")
+            if item_type == "menu_item":
+                category_id = str(item.get("category_id") or "")
+                item_name = str(item.get("item_name") or "")
+                if category_id not in {"breakfasts", "hot_drinks", "cold_drinks", "fresh_drinks"}:
+                    raise ValueError("invalid menu category")
+                menu_item = next(
+                    (candidate for candidate in get_items(category_id) if candidate["name"] == item_name),
+                    None,
+                )
+                if not menu_item:
+                    raise ValueError("menu item is no longer available")
+                item_total = int(menu_item["price"]) * quantity
+                total += item_total
+                total_quantity += quantity
+                if total > 2_000_000 or total_quantity > 10:
+                    raise ValueError("order limit exceeded")
+                detail_lines.append(
+                    f"• <b>{esc(menu_item['name'])}</b> ×{quantity} — <b>{fmt(item_total)} сум</b>"
+                )
+                short_names.append(f"{menu_item['name']} x{quantity}")
+                component_type = "fresh" if category_id == "fresh_drinks" else "other"
+                components.append(
+                    (component_type, menu_item["name"], quantity, menu_item["price"])
+                )
+                continue
+
+            if item_type != "lunch" or item.get("day_id") != expected_day_id:
                 raise ValueError("menu day mismatch")
             hot_name = str(item.get("hot_name") or "")
             garnish = str(item.get("garnish") or "")
             drink_code = str(item.get("drink_code") or "")
             with_salad = item.get("with_salad")
-            quantity = int(item.get("quantity") or 0)
-            if quantity < 1 or quantity > 5 or not isinstance(with_salad, bool):
+            if not isinstance(with_salad, bool):
                 raise ValueError("invalid item options")
 
             cfg, hot_items = get_lunch_config(expected_day_id)
             hot = next((candidate for candidate in hot_items if candidate["name"] == hot_name), None)
             allowed_garnishes = {cfg["garnish1"], cfg["garnish2"], cfg["garnish3"]} if cfg else set()
             drink_name = LUNCH_DRINKS.get(drink_code)
-            if not cfg or not hot or garnish not in allowed_garnishes or not drink_name:
+            built_in_garnish = bool(hot and hot_has_built_in_garnish(hot["name"]))
+            garnish_is_valid = garnish in {"", BUILT_IN_GARNISH} if built_in_garnish else garnish in allowed_garnishes
+            if not cfg or not hot or not garnish_is_valid or not drink_name:
                 raise ValueError("menu item is no longer available")
 
             item_total = int(hot["price"]) * quantity
@@ -1525,7 +1559,7 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
             if total > 2_000_000 or total_quantity > 10:
                 raise ValueError("order limit exceeded")
 
-            options = [garnish]
+            options = [] if built_in_garnish else [garnish]
             if with_salad:
                 options.append(cfg["salad"])
             else:
@@ -1540,10 +1574,9 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
                 f"  └ {esc(' · '.join(options))}"
             )
             short_names.append(f"{hot['name']} + {' + '.join(options)} x{quantity}")
-            components.extend([
-                ("hot", hot["name"], quantity, hot["price"]),
-                ("garnish", garnish, quantity, 0),
-            ])
+            components.append(("hot", hot["name"], quantity, hot["price"]))
+            if not built_in_garnish:
+                components.append(("garnish", garnish, quantity, 0))
             if with_salad:
                 components.append(("salad", cfg["salad"], quantity, 0))
             if drink_code != "none":
