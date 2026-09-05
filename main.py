@@ -101,6 +101,7 @@ LUNCH_DRINKS = {
     "iced_tea": "Айс-ти",
     "none": "Без напитка",
 }
+BUILT_IN_GARNISH = "Гарнир уже в составе блюда"
 POINTS_RATE = 0.05
 POINTS_MAX_USE_RATE = 0.30
 
@@ -1055,7 +1056,7 @@ def lunch_combo_item_id(session):
     if (
         not session.get("day_id")
         or not session.get("hot_id")
-        or not session.get("garnish_index")
+        or session.get("garnish_index") is None
         or session.get("salad_code") is None
         or session.get("drink_code") is None
     ):
@@ -1067,7 +1068,9 @@ def lunch_combo_item_id(session):
 
 
 def lunch_combo_name(cfg, session):
-    base = f"🍱 {session['hot_name']} + {session['garnish']}"
+    base = f"🍱 {session['hot_name']}"
+    if session.get("garnish_index") != 0:
+        base += f" + {session['garnish']}"
     if session.get("salad_code") == "none":
         base += " + 🚫 Без салата"
     else:
@@ -1079,11 +1082,16 @@ def lunch_combo_name(cfg, session):
 
 def get_garnish_by_index(cfg, index):
     mapping = {
+        0: BUILT_IN_GARNISH,
         1: cfg["garnish1"],
         2: cfg["garnish2"],
         3: cfg["garnish3"],
     }
     return mapping.get(index)
+
+
+def hot_has_built_in_garnish(hot_name):
+    return "плов" in str(hot_name or "").casefold()
 
 # ============================================================
 # KEYBOARDS
@@ -1198,11 +1206,13 @@ def kb_lunch_garnishes(cfg):
         [InlineKeyboardButton("🔙 Назад", callback_data="lunch_hot_back")],
     ])
 
-def kb_lunch_salad():
+def kb_lunch_salad(skip_garnish=False):
+    back_text = "🔙 Назад к горячему" if skip_garnish else "🔙 Назад к гарнирам"
+    back_callback = "lunch_hot_back" if skip_garnish else "lunch_salad_back"
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🥗 Оставить салат", callback_data="ls_keep")],
         [InlineKeyboardButton("🚫 Без салата", callback_data="ls_none")],
-        [InlineKeyboardButton("🔙 Назад к гарнирам", callback_data="lunch_salad_back")],
+        [InlineKeyboardButton(back_text, callback_data=back_callback)],
     ])
 
 
@@ -1211,7 +1221,7 @@ def kb_lunch_drinks():
         [InlineKeyboardButton("🥤 Шербет", callback_data="ld_sherbet")],
         [InlineKeyboardButton("🧊 Айс-ти", callback_data="ld_iced_tea")],
         [InlineKeyboardButton("🚫 Без напитка", callback_data="ld_none")],
-        [InlineKeyboardButton("🔙 Назад к гарнирам", callback_data="lunch_drink_back")],
+        [InlineKeyboardButton("🔙 Назад к салату", callback_data="lunch_drink_back")],
     ])
 
 
@@ -2316,7 +2326,33 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session["hot_name"] = selected["name"]
         session["hot_price"] = selected["price"]
         session["hot_image"] = selected.get("image")
+        session["garnish"] = None
+        session["garnish_index"] = None
+        session["salad_code"] = None
+        session["salad_name"] = None
+        session["drink_code"] = None
+        session["drink_name"] = None
         await q.answer()
+        if hot_has_built_in_garnish(selected["name"]):
+            session["garnish"] = BUILT_IN_GARNISH
+            session["garnish_index"] = 0
+            caption = (
+                f"<b>2️⃣ Салат — по желанию</b>\n\n"
+                f"🔥 {selected['name']}\n"
+                f"🍚 Рис уже входит в состав плова — отдельный гарнир выбирать не нужно.\n\n"
+                f"🥗 Сегодня: {cfg['salad']}\n"
+                f"{cfg.get('salad_description') or ''}\n"
+                f"Если салат не хотите, выберите «Без салата»."
+            )
+            await send_or_edit(
+                user_id,
+                last,
+                cfg.get("salad_image") or selected.get("image") or LUNCH_BANNER,
+                caption,
+                kb_lunch_salad(skip_garnish=True),
+                context,
+            )
+            return
         caption = (
             f"<b>2️⃣ Выберите гарнир</b>\n\n"
             f"🔥 {selected['name']}\n"
@@ -2403,10 +2439,13 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session["salad_name"] = cfg["salad"] if data == "ls_keep" else None
         await q.answer("🥗 Салат оставлен" if data == "ls_keep" else "🚫 Без салата")
         salad_text = cfg["salad"] if data == "ls_keep" else "🚫 Без салата"
+        built_in_garnish = session.get("garnish_index") == 0
+        garnish_line = "" if built_in_garnish else f"🍚 Гарнир: {session['garnish']}\n"
+        step_number = "3️⃣" if built_in_garnish else "4️⃣"
         caption = (
-            f"<b>4️⃣ Выберите напиток</b>\n\n"
+            f"<b>{step_number} Выберите напиток</b>\n\n"
             f"🔥 {session['hot_name']}\n"
-            f"🍚 Гарнир: {session['garnish']}\n"
+            f"{garnish_line}"
             f"🥗 Салат: {salad_text}\n\n"
             f"🥤 Напиток — по желанию: Шербет, Айс-ти или без напитка."
         )
@@ -2420,17 +2459,20 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session = lunch_session(context)
         cfg = get_lunch_config(session.get("day_id") or current_day()[0])[0]
         await q.answer()
+        built_in_garnish = session.get("garnish_index") == 0
+        garnish_line = "" if built_in_garnish else f"🍚 Гарнир: {esc(session['garnish'])}\n\n"
+        step_number = "2️⃣" if built_in_garnish else "3️⃣"
         caption = (
-            f"<b>3️⃣ Салат — по желанию</b>\n\n"
+            f"<b>{step_number} Салат — по желанию</b>\n\n"
             f"🔥 {esc(session['hot_name'])}\n"
-            f"🍚 Гарнир: {esc(session['garnish'])}\n\n"
+            f"{garnish_line}"
             f"🥗 Сегодня: {esc(cfg['salad'])}\n"
             f"{esc(cfg.get('salad_description') or '')}\n"
             f"Если салат не хотите, выберите «Без салата»."
         )
         await send_or_edit(
             user_id, last, cfg.get("salad_image") or session.get("hot_image") or LUNCH_BANNER,
-            caption, kb_lunch_salad(), context,
+            caption, kb_lunch_salad(skip_garnish=built_in_garnish), context,
         )
         return
 
@@ -2458,10 +2500,13 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         update_cart(user_id, combo_id, combo_name, session["hot_price"], 1, pickup_date)
 
+        garnish_components = (
+            [] if session.get("garnish_index") == 0
+            else [("garnish", session["garnish"], 1, 0)]
+        )
         context.user_data["lunch_components"] = [
             ("hot", session["hot_name"], 1, session["hot_price"]),
-            ("garnish", session["garnish"], 1, 0),
-        ] + ([] if session.get("salad_code") == "none" else [("salad", cfg["salad"], 1, 0)]) \
+        ] + garnish_components + ([] if session.get("salad_code") == "none" else [("salad", cfg["salad"], 1, 0)]) \
           + ([] if drink_code == "none" else [("drink", drink_name, 1, 0)])
         await q.answer(f"✅ {drink_name}")
         await send_or_edit(
@@ -2828,13 +2873,17 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     drink_name = LUNCH_DRINKS.get(drink_code)
                     cfg, hot_items = get_lunch_config(day_id)
                     hot = next((h for h in hot_items if h["id"] == hot_id), None)
-                    garnish = get_garnish_by_index(cfg, garnish_index) if cfg and garnish_index else None
+                    garnish = (
+                        get_garnish_by_index(cfg, garnish_index)
+                        if cfg and garnish_index is not None else None
+                    )
                     if cfg and hot and garnish and salad_code in {"keep", "none"} and drink_name:
                         qty = item["count"]
                         components.extend([
                             ("hot", hot["name"], qty, hot["price"]),
-                            ("garnish", garnish, qty, 0),
                         ])
+                        if garnish_index != 0:
+                            components.append(("garnish", garnish, qty, 0))
                         if salad_code != "none":
                             components.append(("salad", cfg["salad"], qty, 0))
                         if drink_code != "none":
