@@ -1162,6 +1162,25 @@ def kb_category(user_id, cat_id, items):
     return InlineKeyboardMarkup(rows)
 
 
+def kb_cart(user_id):
+    rows = []
+    for item_id, item in get_cart(user_id).items():
+        name = str(item["name"])
+        short_name = name if len(name) <= 32 else f"{name[:29]}…"
+        rows.append([
+            InlineKeyboardButton(
+                f"➖ Убрать 1: {short_name} ×{item['count']}",
+                callback_data=f"cart_dec_{item_id}",
+            )
+        ])
+    rows.extend([
+        [InlineKeyboardButton("✅ Оформить заказ", callback_data="select_time")],
+        [InlineKeyboardButton("🗑 Очистить корзину", callback_data="cart_clear"),
+         InlineKeyboardButton("🔙 В меню", callback_data="home")],
+    ])
+    return InlineKeyboardMarkup(rows)
+
+
 def kb_lunch_hot(hot_items):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(f"{h['emoji']} {h['name']} — {fmt(h['price'])} сум", callback_data=f"lh_{h['id']}")]
@@ -1972,7 +1991,7 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "lunch_today", "select_time", "postpone_time", "time_custom",
             "comment_skip", "comment_edit", "toggle_points", "confirm_order",
         }
-        or data.startswith(("start_day_", "lh_", "lg_", "ls_", "ld_", "add_", "tv_"))
+        or data.startswith(("start_day_", "lh_", "lg_", "ls_", "ld_", "add_", "cart_dec_", "tv_"))
     )
     if ordering_action and not menu_is_active():
         await q.answer("⛔ Приём заказов сейчас закрыт.", show_alert=True)
@@ -2541,12 +2560,54 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
             CART_BANNER,
             f"<b>🛒 Ваш заказ</b>\n"
             f"📅 Дата выдачи: <b>{display_date(pickup_date)}</b>\n\n"
-            f"{lines}\n\n<b>Итого: {fmt(total)} сум</b>\n\nПерейти к оформлению?",
-            InlineKeyboardMarkup([
-                [InlineKeyboardButton("✅ Оформить заказ", callback_data="select_time")],
-                [InlineKeyboardButton("🗑 Очистить корзину", callback_data="cart_clear"),
-                 InlineKeyboardButton("🔙 В меню", callback_data="home")],
-            ]),
+            f"{lines}\n\n<b>Итого: {fmt(total)} сум</b>\n\n"
+            f"Нажмите кнопку нужной позиции, чтобы убрать одну штуку.",
+            kb_cart(user_id),
+            context,
+        )
+        return
+
+    if data.startswith("cart_dec_"):
+        item_id = data[len("cart_dec_"):]
+        item = get_cart(user_id).get(item_id)
+        if not item:
+            await q.answer("Этой позиции уже нет в корзине.", show_alert=True)
+            return
+        new_count = max(0, int(item["count"]) - 1)
+        update_cart(
+            user_id,
+            item_id,
+            item["name"],
+            item["price"],
+            new_count,
+            item.get("pickup_date"),
+        )
+        await q.answer(
+            f"Убрано: {item['name']}"
+            if new_count == 0 else f"Осталось: {new_count} шт."
+        )
+        lines, lunch, other, _ = get_cart_summary(user_id)
+        if not lines:
+            await send_or_edit(
+                user_id,
+                last,
+                CART_BANNER,
+                "<b>🛒 Корзина пуста!</b>",
+                kb_main(),
+                context,
+            )
+            return
+        total = lunch + other
+        pickup_date = get_cart_pickup_date(user_id)
+        await send_or_edit(
+            user_id,
+            last,
+            CART_BANNER,
+            f"<b>🛒 Ваш заказ</b>\n"
+            f"📅 Дата выдачи: <b>{display_date(pickup_date)}</b>\n\n"
+            f"{lines}\n\n<b>Итого: {fmt(total)} сум</b>\n\n"
+            f"Нажмите кнопку нужной позиции, чтобы убрать одну штуку.",
+            kb_cart(user_id),
             context,
         )
         return
