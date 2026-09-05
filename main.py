@@ -395,7 +395,8 @@ def init_db():
         points_earned INTEGER NOT NULL DEFAULT 0,
         rewards_applied INTEGER NOT NULL DEFAULT 0,
         qr_token TEXT,
-        request_token TEXT
+        request_token TEXT,
+        comment TEXT
     )""")
 
     c.execute("""CREATE TABLE IF NOT EXISTS order_items (
@@ -475,6 +476,7 @@ def init_db():
     ensure_column("orders", "qr_token", "TEXT")
     ensure_column("orders", "pickup_date", "TEXT")
     ensure_column("orders", "request_token", "TEXT")
+    ensure_column("orders", "comment", "TEXT")
     ensure_column("lunch_config", "salad_description", "TEXT")
     ensure_column("lunch_config", "salad_image", "TEXT")
     ensure_column("lunch_config", "poster", "TEXT")
@@ -844,11 +846,13 @@ def create_order(
     pickup_time,
     pickup_date,
     request_token,
+    comment="",
     discount_amount=0,
     components=None,
     points_used=0,
 ):
     components = components or []
+    comment = str(comment or "").strip()[:300]
     if not request_token:
         raise ValueError("request_token is required")
     conn = _conn()
@@ -873,11 +877,11 @@ def create_order(
     cur.execute(
         "INSERT INTO orders("
         "user_id,items,total,status,pickup_time,pickup_date,created_at,discount_amount,"
-        "points_used,points_earned,rewards_applied,qr_token,request_token"
-        ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "points_used,points_earned,rewards_applied,qr_token,request_token,comment"
+        ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             user_id, items_str, total, "new", pickup_time, pickup_date, now, discount_amount,
-            points_used, points_earned, 0, qr_token, request_token,
+            points_used, points_earned, 0, qr_token, request_token, comment,
         ),
     )
     order_id = cur.lastrowid
@@ -960,7 +964,7 @@ def get_order(order_id):
 def get_active_orders():
     conn = _conn()
     rows = conn.execute(
-        "SELECT order_id,user_id,items,total,status,pickup_time,pickup_date,created_at FROM orders "
+        "SELECT order_id,user_id,items,total,status,pickup_time,pickup_date,created_at,comment FROM orders "
         "WHERE status NOT IN ('delivered','cancelled') "
         "ORDER BY COALESCE(pickup_date,substr(created_at,1,10)), "
         "CASE pickup_time WHEN 'Сейчас (В очереди)' THEN '00:00' ELSE pickup_time END, order_id"
@@ -1001,7 +1005,7 @@ def get_all_orders_for_export():
     conn = _conn()
     rows = conn.execute(
         "SELECT o.order_id,o.created_at,o.pickup_date,u.phone,o.items,o.total,o.status,o.pickup_time,"
-        "o.discount_amount,o.points_used,o.points_earned "
+        "o.discount_amount,o.points_used,o.points_earned,o.comment "
         "FROM orders o LEFT JOIN users u ON o.user_id=u.user_id ORDER BY o.order_id DESC"
     ).fetchall()
     conn.close()
@@ -1452,6 +1456,12 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         use_points = payload.get("use_points", False)
         if not isinstance(use_points, bool):
             raise ValueError("invalid points option")
+        raw_comment = payload.get("comment", "")
+        if not isinstance(raw_comment, str):
+            raise ValueError("invalid order comment")
+        comment = re.sub(r"\s+", " ", raw_comment).strip()
+        if len(comment) > 300:
+            raise ValueError("order comment is too long")
 
         expected_day_id = {0: "mon", 1: "tue", 2: "wed", 3: "thu", 4: "fri"}[pickup_day.weekday()]
         detail_lines = []
@@ -1532,6 +1542,7 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
         pickup_time,
         pickup_date,
         request_token,
+        comment=comment,
         components=components,
         points_used=points_to_use,
     )
@@ -1544,11 +1555,13 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
     bot_info = await context.bot.get_me()
     pickup_link = get_pickup_link(bot_info.username, qr_token)
     qr_image = build_qr_image(pickup_link)
+    comment_line = f"📝 Комментарий: {esc(comment)}\n" if comment else ""
     confirmation = (
         f"<b>✅ Заказ #{order_id} принят!</b>\n\n{lines}\n\n"
         f"📍 Место выдачи: 4 этаж, кухня\n"
         f"📅 Дата: {display_date(pickup_date)}\n"
         f"🕒 Время: {pickup_time}\n"
+        f"{comment_line}"
         f"💰 К оплате через Click: {fmt(final_total)} сум\n\n"
         f"⭐ Списано бонусов: {fmt(points_used)}\n"
         f"⭐ Будет начислено после выдачи: +{fmt(points_earned)}\n"
@@ -1582,6 +1595,7 @@ async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"🚨 <b>Новый заказ #{order_id} из Mini App!</b>\n"
             f"👤 {full_name}{username}\n📞 {esc(phone)}\n"
             f"📅 {display_date(pickup_date)}\n🕒 {pickup_time}\n"
+            f"{comment_line}"
             f"💰 {fmt(final_total)} сум — ссылка Click отправлена клиенту\n"
             f"⭐ Списано бонусов: {fmt(points_used)}\n"
             f"⭐ Будет начислено после выдачи: {fmt(points_earned)}\n\n"
@@ -2001,12 +2015,13 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await q.message.reply_text("<b>📋 Сейчас нет активных заказов.</b>", parse_mode="HTML")
                 return
             for o in orders[:15]:
+                comment_line = f"\n📝 {esc(o['comment'])}" if o.get("comment") else ""
                 txt = (
                     f"<b>Заказ #{o['order_id']}</b> | {ORDER_STATUSES.get(o['status'], o['status'])}\n"
                     f"📅 {display_date(o['pickup_date'] or o['created_at'][:10])}\n"
                     f"🕒 {o['pickup_time']}\n"
                     f"💰 {fmt(o['total'])} сум\n"
-                    f"<i>{esc(o['items'][:700])}</i>"
+                    f"<i>{esc(o['items'][:700])}</i>{comment_line}"
                 )
                 await q.message.reply_text(
                     txt, reply_markup=kb_order_status(o["order_id"], o["status"]), parse_mode="HTML"
@@ -2073,7 +2088,7 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
             w = csv.writer(text_buffer, delimiter=";")
             w.writerow([
                 "ID", "Создан", "Дата выдачи", "Телефон", "Состав", "Сумма", "Статус",
-                "Время выдачи", "Скидка", "Бонусы списаны", "Бонусы начислены",
+                "Время выдачи", "Комментарий", "Скидка", "Бонусы списаны", "Бонусы начислены",
             ])
             for r in rows:
                 phone = str(r["phone"] or "")
@@ -2082,7 +2097,8 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 w.writerow([
                     r["order_id"], r["created_at"], r["pickup_date"] or "", f'="{phone}"',
                     r["items"].replace("\n", " | "), r["total"],
-                    ORDER_STATUSES.get(r["status"], r["status"]), r["pickup_time"], r["discount_amount"],
+                    ORDER_STATUSES.get(r["status"], r["status"]), r["pickup_time"], r["comment"] or "",
+                    r["discount_amount"],
                     r["points_used"], r["points_earned"],
                 ])
             document = BytesIO(text_buffer.getvalue().encode("utf-8-sig"))
