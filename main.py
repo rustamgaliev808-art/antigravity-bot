@@ -1880,10 +1880,12 @@ async def _show_order_comment_prompt(context, user_id, pickup_time, discount=Fal
         CART_BANNER,
         f"<b>📝 Комментарий к заказу</b>\n\n"
         f"📅 {display_date(pickup_date)} · 🕒 {pickup_time}\n\n"
-        f"Напишите пожелание одним сообщением — например, «без сахара» или "
-        f"«позвонить за 5 минут».{current_line}",
+        f"1️⃣ Нажмите поле <b>«Сообщение»</b> внизу.\n"
+        f"2️⃣ Напишите пожелание — например, «без сахара» или «позвонить за 5 минут».\n"
+        f"3️⃣ Нажмите кнопку отправки справа ➤\n\n"
+        f"После отправки оформление продолжится автоматически.{current_line}",
         InlineKeyboardMarkup([
-            [InlineKeyboardButton("Продолжить без комментария", callback_data="comment_skip")],
+            [InlineKeyboardButton("У меня нет комментария — продолжить", callback_data="comment_skip")],
             [InlineKeyboardButton("🔙 Назад к выбору времени", callback_data="select_time")],
         ]),
         context,
