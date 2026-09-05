@@ -1727,7 +1727,36 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         context.user_data["state"] = None
         context.user_data["points_to_use"] = 0
-        await _show_checkout(update.message, context, user_id, parsed.strftime("%H:%M"), reply=True)
+        context.user_data["order_comment"] = ""
+        await _show_order_comment_prompt(
+            context,
+            user_id,
+            parsed.strftime("%H:%M"),
+        )
+        return
+
+    if state == "ORDER_COMMENT":
+        comment = re.sub(r"\s+", " ", text).strip()
+        if len(comment) > 300:
+            await update.message.reply_text(
+                "⚠️ Комментарий слишком длинный. Оставьте не более 300 символов."
+            )
+            return
+        pending = context.user_data.get("pending_checkout")
+        if not pending:
+            context.user_data["state"] = None
+            await update.message.reply_text("⚠️ Оформление устарело. Откройте корзину заново.")
+            return
+        context.user_data["order_comment"] = comment
+        context.user_data["state"] = None
+        await _show_checkout(
+            update.message,
+            context,
+            user_id,
+            pending["pickup_time"],
+            discount=bool(pending.get("discount", False)),
+            reply=True,
+        )
         return
 
     if user_id != ADMIN_ID:
@@ -1804,6 +1833,34 @@ async def _do_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================================
 # CHECKOUT — ОПЛАТА ЧЕРЕЗ CLICK
 # ============================================================
+async def _show_order_comment_prompt(context, user_id, pickup_time, discount=False):
+    pickup_date = context.user_data.get("pickup_date") or get_cart_pickup_date(user_id)
+    context.user_data["state"] = "ORDER_COMMENT"
+    context.user_data["pending_checkout"] = {
+        "pickup_time": pickup_time,
+        "discount": bool(discount),
+    }
+    current_comment = str(context.user_data.get("order_comment") or "").strip()
+    current_line = (
+        f"\n\nТекущий комментарий: <i>{esc(current_comment)}</i>"
+        if current_comment else ""
+    )
+    await send_or_edit(
+        user_id,
+        context.user_data.get("last_msg_id"),
+        CART_BANNER,
+        f"<b>📝 Комментарий к заказу</b>\n\n"
+        f"📅 {display_date(pickup_date)} · 🕒 {pickup_time}\n\n"
+        f"Напишите пожелание одним сообщением — например, «без сахара» или "
+        f"«позвонить за 5 минут».{current_line}",
+        InlineKeyboardMarkup([
+            [InlineKeyboardButton("Продолжить без комментария", callback_data="comment_skip")],
+            [InlineKeyboardButton("🔙 Назад к выбору времени", callback_data="select_time")],
+        ]),
+        context,
+    )
+
+
 async def _show_checkout(source, context, user_id, pickup_time, discount=False, reply=False):
     lines, lunch_total, other_total, items_str = get_cart_summary(user_id)
     if not lines:
@@ -1834,6 +1891,7 @@ async def _show_checkout(source, context, user_id, pickup_time, discount=False, 
     final = max(0, discounted_base - current_points)
     context.user_data["final_total"] = final
     context.user_data["discount_amount"] = disc_amt
+    order_comment = str(context.user_data.get("order_comment") or "").strip()
     request_token = secrets.token_urlsafe(18)
     context.user_data["request_token"] = request_token
     context.user_data["checkout_snapshot"] = {
@@ -1845,6 +1903,7 @@ async def _show_checkout(source, context, user_id, pickup_time, discount=False, 
         "discount_amount": disc_amt,
         "points_to_use": current_points,
         "final": final,
+        "comment": order_comment,
     }
     if max_points:
         points_btn = (
@@ -1858,15 +1917,21 @@ async def _show_checkout(source, context, user_id, pickup_time, discount=False, 
 
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton(points_btn, callback_data=points_callback)],
+        [InlineKeyboardButton("✏️ Изменить комментарий", callback_data="comment_edit")],
         [InlineKeyboardButton("💳 Перейти к оплате в Click", url=get_click_payment_url(final))],
         [InlineKeyboardButton("✅ Я оплатил(а) — подтвердить заказ", callback_data="confirm_order")],
         [InlineKeyboardButton("🔙 Назад", callback_data="select_time")],
     ])
     discount_line = f"\n🔥 Скидка на обеды: -{fmt(disc_amt)} сум" if disc_amt else ""
+    comment_line = (
+        f"📝 Комментарий: <i>{esc(order_comment)}</i>\n"
+        if order_comment else "📝 Комментарий: без комментария\n"
+    )
     caption = (
         f"<b>🧾 Проверьте заказ</b>\n\n"
         f"📅 Дата выдачи: <b>{display_date(pickup_date)}</b>\n"
         f"🕒 Время выдачи: <b>{pickup_time}</b>\n"
+        f"{comment_line}"
         f"⭐ Бонусов используется: {fmt(current_points)}"
         f"{discount_line}\n"
         f"💰 К оплате через Click: <b>{fmt(final)} сум</b>\n\n"
@@ -1903,7 +1968,10 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     ordering_action = (
-        data in {"lunch_today", "select_time", "postpone_time", "time_custom", "toggle_points", "confirm_order"}
+        data in {
+            "lunch_today", "select_time", "postpone_time", "time_custom",
+            "comment_skip", "comment_edit", "toggle_points", "confirm_order",
+        }
         or data.startswith(("start_day_", "lh_", "lg_", "ls_", "ld_", "add_", "tv_"))
     )
     if ordering_action and not menu_is_active():
@@ -2487,6 +2555,9 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.answer("Очищено")
         clear_cart(user_id)
         reset_lunch_session(context)
+        context.user_data["state"] = None
+        context.user_data["order_comment"] = None
+        context.user_data["pending_checkout"] = None
         await show_main(user_id, context)
         return
 
@@ -2544,6 +2615,48 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if data == "comment_skip":
+        pending = context.user_data.get("pending_checkout")
+        if not pending:
+            await q.answer("Оформление устарело. Откройте корзину заново.", show_alert=True)
+            return
+        context.user_data["order_comment"] = ""
+        context.user_data["state"] = None
+        await q.answer()
+        await _show_checkout(
+            None,
+            context,
+            user_id,
+            pending["pickup_time"],
+            discount=bool(pending.get("discount", False)),
+        )
+        return
+
+    if data == "comment_edit":
+        snapshot = context.user_data.get("checkout_snapshot")
+        pending = context.user_data.get("pending_checkout")
+        pickup_time = (
+            snapshot.get("pickup_time") if snapshot
+            else pending.get("pickup_time") if pending
+            else None
+        )
+        discount = (
+            bool(snapshot.get("discount", False)) if snapshot
+            else bool(pending.get("discount", False)) if pending
+            else False
+        )
+        if not pickup_time:
+            await q.answer("Оформление устарело. Откройте корзину заново.", show_alert=True)
+            return
+        await q.answer()
+        await _show_order_comment_prompt(
+            context,
+            user_id,
+            pickup_time,
+            discount=discount,
+        )
+        return
+
     # ------------------------ PICKUP TIME / CHECKOUT ------------------------
     if data.startswith("tv_"):
         time_val = data[3:]
@@ -2561,7 +2674,13 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             await q.answer()
             context.user_data["points_to_use"] = 0
-            await _show_checkout(None, context, user_id, "16:00–17:00", discount=True)
+            context.user_data["order_comment"] = ""
+            await _show_order_comment_prompt(
+                context,
+                user_id,
+                "16:00–17:00",
+                discount=True,
+            )
         else:
             if time_val == "Сейчас (В очереди)":
                 now_time = local_now().time().replace(tzinfo=None)
@@ -2589,7 +2708,8 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     return
             await q.answer()
             context.user_data["points_to_use"] = 0
-            await _show_checkout(None, context, user_id, time_val)
+            context.user_data["order_comment"] = ""
+            await _show_order_comment_prompt(context, user_id, time_val)
         return
 
     if data == "paid":
@@ -2627,6 +2747,7 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         final = int(snapshot["final"])
         pickup_time = snapshot["pickup_time"]
         discount_amount = int(snapshot["discount_amount"])
+        order_comment = str(snapshot.get("comment") or "").strip()
 
         components = []
         for item_id, item in get_cart(user_id).items():
@@ -2684,6 +2805,7 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
             discount_amount=discount_amount,
             components=components,
             points_used=points_to_use,
+            comment=order_comment,
         )
         if not created:
             await context.bot.send_message(
@@ -2706,6 +2828,7 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📍 Место выдачи: 4 этаж, кухня\n"
             f"📅 Дата: {display_date(pickup_date)}\n"
             f"🕒 Время: {pickup_time}\n"
+            f"📝 Комментарий: {esc(order_comment) if order_comment else 'без комментария'}\n"
             f"💰 Оплата через Click: {fmt(final)} сум\n\n"
             f"⭐ Списано бонусов: {fmt(points_used)}\n"
             f"⭐ Будет начислено после выдачи: +{fmt(points_earned)}\n"
@@ -2725,6 +2848,8 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["points_to_use"] = 0
         context.user_data["request_token"] = None
         context.user_data["checkout_snapshot"] = None
+        context.user_data["order_comment"] = None
+        context.user_data["pending_checkout"] = None
 
         order_notification_chat_id = ORDER_CHANNEL_ID or ADMIN_ID
         if order_notification_chat_id:
@@ -2734,6 +2859,7 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🚨 <b>Новый заказ #{order_id}!</b>\n"
                 f"👤 {name}{username}\n📞 {esc(phone)}\n"
                 f"📅 {display_date(pickup_date)}\n🕒 {pickup_time}\n"
+                f"📝 Комментарий: {esc(order_comment) if order_comment else 'без комментария'}\n"
                 f"💰 {fmt(final)} сум — клиент подтвердил оплату через Click\n"
                 f"⭐ Списано баллов: {fmt(points_used)}\n"
                 f"⭐ Будет начислено после выдачи: {fmt(points_earned)}\n\n"
