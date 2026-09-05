@@ -1142,16 +1142,18 @@ def kb_category(user_id, cat_id, items):
     for item in items:
         iid = str(item["id"])
         count = cart.get(iid, {}).get("count", 0)
-        rows.append([InlineKeyboardButton(f"🍽 {item['name']} — {fmt(item['price'])} сум", callback_data="ignore")])
+        rows.append([
+            InlineKeyboardButton(
+                f"🍽 {item['name']} — {fmt(item['price'])} сум",
+                callback_data=f"add_{cat_id}_{iid}",
+            )
+        ])
         if count:
             rows.append([
                 InlineKeyboardButton("➖", callback_data=f"rm_{cat_id}_{iid}"),
                 InlineKeyboardButton(f"{count} шт", callback_data="ignore"),
                 InlineKeyboardButton("➕", callback_data=f"add_{cat_id}_{iid}"),
             ])
-        else:
-            label = "➕ Добавить фреш" if cat_id == "fresh_drinks" else "➕ Добавить"
-            rows.append([InlineKeyboardButton(label, callback_data=f"add_{cat_id}_{iid}")])
     back = "nav_drinks" if cat_id in {"hot_drinks", "cold_drinks", "fresh_drinks"} else "home"
     rows.append([
         InlineKeyboardButton("🛒 Корзина", callback_data="cart_view"),
