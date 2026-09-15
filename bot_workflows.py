@@ -18,6 +18,7 @@ def home(runtime):
     return InlineKeyboardMarkup([
         [launch(runtime)],
         [InlineKeyboardButton("📋 Мои заказы", callback_data="my_orders"), launch(runtime, "🛒 Корзина", "cart")],
+        [InlineKeyboardButton("⭐ Мои бонусы", callback_data="profile")],
         [InlineKeyboardButton("Помощь", callback_data="help")],
     ])
 
@@ -130,6 +131,17 @@ async def list_orders(runtime, message, actor, kind):
         await message.reply_text(card(runtime, row), reply_markup=markup)
 
 
+async def show_bonuses(runtime, message, actor):
+    balance = runtime.get_points_balance(actor)
+    orders_count = runtime.get_orders_count(actor)
+    await message.reply_text(
+        f"⭐ Мои бонусы\n\nБаланс: {runtime.fmt(balance)} бонусов\n"
+        f"Заказов: {orders_count}\n\nПосле выдачи начисляется 5%. "
+        "Бонусами можно оплатить до 30% следующего заказа.",
+        reply_markup=home(runtime),
+    )
+
+
 async def start(runtime, update, context):
     actor = update.effective_user.id
     arg = context.args[0] if context.args else ""
@@ -168,8 +180,10 @@ async def callback(runtime, update, context):
             await q.answer()
             if data == "help":
                 await help_message(runtime, q.message)
-            elif data in {"my_orders", "profile"}:
+            elif data == "my_orders":
                 await list_orders(runtime, q.message, actor, "mine")
+            elif data == "profile":
+                await show_bonuses(runtime, q.message, actor)
             else:
                 await send_home(runtime, context.bot, actor)
             return True

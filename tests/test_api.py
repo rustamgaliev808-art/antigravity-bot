@@ -81,6 +81,18 @@ class API(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["Access-Control-Allow-Origin"], "https://mini.example")
         self.assertNotIn("Access-Control-Allow-Credentials", response.headers)
 
+    async def test_bot_home_exposes_registration_orders_cart_and_bonuses(self):
+        labels = [button.text for row in bot_workflows.home(main).inline_keyboard for button in row]
+        self.assertIn("🍽 Открыть меню", labels)
+        self.assertIn("📋 Мои заказы", labels)
+        self.assertIn("🛒 Корзина", labels)
+        self.assertIn("⭐ Мои бонусы", labels)
+        contact = bot_workflows.contact_keyboard().keyboard[0][0]
+        self.assertTrue(contact.request_contact)
+        message = SimpleNamespace(reply_text=AsyncMock())
+        await bot_workflows.show_bonuses(main, message, 1)
+        self.assertIn("Баланс:", message.reply_text.await_args.args[0])
+
     async def test_registration_draft_and_real_balance(self):
         self.sql("DELETE FROM users WHERE user_id=1")
         self.assertFalse((await (await self.request("/api/me")).json())["registered"])
