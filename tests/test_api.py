@@ -40,6 +40,30 @@ class Auth(unittest.TestCase):
             verify_init_data(signed(), "different-secret")
 
 
+class TelegramWebhook(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.bot_app = SimpleNamespace(bot=SimpleNamespace(), process_update=AsyncMock())
+        app = __import__("aiohttp").web.Application()
+        main.add_telegram_webhook(app, self.bot_app, "synthetic_webhook_secret")
+        self.client = TestClient(TestServer(app))
+        await self.client.start_server()
+
+    async def asyncTearDown(self):
+        await self.client.close()
+
+    async def test_rejects_missing_secret_and_accepts_telegram_update(self):
+        payload = {"update_id": 123456}
+        response = await self.client.post("/api/telegram/webhook", json=payload)
+        self.assertEqual(response.status, 401)
+        response = await self.client.post(
+            "/api/telegram/webhook",
+            json=payload,
+            headers={"X-Telegram-Bot-Api-Secret-Token": "synthetic_webhook_secret"},
+        )
+        self.assertEqual(response.status, 200)
+        self.bot_app.process_update.assert_awaited_once()
+
+
 class API(unittest.IsolatedAsyncioTestCase):
     sql = test_orders.Orders.sql
     create = test_orders.Orders.create

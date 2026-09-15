@@ -60,6 +60,8 @@ SUPPORT_CONTACT = os.getenv("SUPPORT_CONTACT", "").strip()
 BOT_USERNAME = os.getenv("BOT_USERNAME", "").strip().lstrip("@")
 API_ALLOWED_ORIGINS = [value.strip() for value in os.getenv("API_ALLOWED_ORIGINS", "").split(",") if value.strip()]
 INIT_DATA_MAX_AGE = int(os.getenv("INIT_DATA_MAX_AGE", "3600"))
+WEBHOOK_BASE_URL = os.getenv("WEBHOOK_BASE_URL", "").strip().rstrip("/")
+TELEGRAM_WEBHOOK_SECRET = os.getenv("TELEGRAM_WEBHOOK_SECRET", "").strip()
 CHANNEL_ID = os.getenv("CHANNEL_ID", "@your_channel")
 MINIAPP_URL = os.getenv(
     "MINIAPP_URL",
@@ -2775,6 +2777,22 @@ async def handle_error(update, context):
     logging.error("handler_failed type=%s request_id=%s", type(error).__name__, getattr(update, "update_id", "unknown"))
 
 
+def add_telegram_webhook(web_app, app_bot, webhook_secret):
+    async def telegram_webhook(request):
+        supplied = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+        if not webhook_secret or not secrets.compare_digest(supplied, webhook_secret):
+            raise web.HTTPUnauthorized()
+        try:
+            payload = await request.json()
+            update = Update.de_json(payload, app_bot.bot)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            raise web.HTTPBadRequest() from None
+        await app_bot.process_update(update)
+        return web.Response(text="OK")
+
+    web_app.router.add_post("/api/telegram/webhook", telegram_webhook)
+
+
 async def main():
     if not TOKEN or TOKEN == "ВАШ_ТОКЕН":
         raise RuntimeError("BOT_TOKEN не установлен. Задайте переменную окружения перед запуском.")
@@ -2799,7 +2817,12 @@ async def main():
     app_bot.add_handler(CallbackQueryHandler(btn))
     app_bot.add_error_handler(handle_error)
 
+    if WEBHOOK_BASE_URL and not TELEGRAM_WEBHOOK_SECRET:
+        raise RuntimeError("TELEGRAM_WEBHOOK_SECRET обязателен при WEBHOOK_BASE_URL.")
+
     web_app = create_app(sys.modules[__name__], app_bot.bot)
+    if WEBHOOK_BASE_URL:
+        add_telegram_webhook(web_app, app_bot, TELEGRAM_WEBHOOK_SECRET)
     runner = web.AppRunner(web_app, access_log=None)
     await runner.setup()
     await web.TCPSite(runner, os.getenv("API_BIND", "127.0.0.1"), int(os.getenv("PORT", 8080))).start()
@@ -2811,8 +2834,16 @@ async def main():
         if app_bot.post_init:
             await app_bot.post_init(app_bot)
         await app_bot.start()
-        await app_bot.updater.start_polling()
-        logging.info(">>> Бот запущен <<<")
+        if WEBHOOK_BASE_URL:
+            await app_bot.bot.set_webhook(
+                url=f"{WEBHOOK_BASE_URL}/api/telegram/webhook",
+                secret_token=TELEGRAM_WEBHOOK_SECRET,
+                allowed_updates=Update.ALL_TYPES,
+            )
+            logging.info(">>> Бот запущен через webhook <<<")
+        else:
+            await app_bot.updater.start_polling()
+            logging.info(">>> Бот запущен через polling <<<")
         await asyncio.Event().wait()
     finally:
         if app_bot.updater and app_bot.updater.running:
