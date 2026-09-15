@@ -1,4 +1,11 @@
 import os
+import sys
+import bot_workflows
+import order_lifecycle
+from lunch_api import create_app
+from config import database_path
+from order_rules import OrderError, fail, normalize, fingerprint, quote as quote_order
+from order_storage import save, existing_order
 import logging
 import asyncio
 import sqlite3
@@ -18,6 +25,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     BotCommand,
+    MenuButtonWebApp,
     InputMediaPhoto,
     KeyboardButton,
     WebAppInfo,
@@ -47,6 +55,11 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 TOKEN = os.getenv("BOT_TOKEN", "ВАШ_ТОКЕН")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+KITCHEN_IDS = {int(value.strip()) for value in os.getenv("KITCHEN_IDS", "").split(",") if value.strip().isdigit()}
+SUPPORT_CONTACT = os.getenv("SUPPORT_CONTACT", "").strip()
+BOT_USERNAME = os.getenv("BOT_USERNAME", "").strip().lstrip("@")
+API_ALLOWED_ORIGINS = [value.strip() for value in os.getenv("API_ALLOWED_ORIGINS", "").split(",") if value.strip()]
+INIT_DATA_MAX_AGE = int(os.getenv("INIT_DATA_MAX_AGE", "3600"))
 CHANNEL_ID = os.getenv("CHANNEL_ID", "@your_channel")
 MINIAPP_URL = os.getenv(
     "MINIAPP_URL",
@@ -58,11 +71,11 @@ ORDER_CHANNEL_ID = (
     if _order_channel_id.lstrip("-").isdigit()
     else _order_channel_id
 )
-TZ_OFFSET = int(os.getenv("TZ_OFFSET", "5"))
+TZ_OFFSET = 5  # Click Lunch always operates in Tashkent (UTC+5).
 CLICK_SERVICE_ID = os.getenv("CLICK_SERVICE_ID", "52528").strip()
 CLICK_MERCHANT_ID = os.getenv("CLICK_MERCHANT_ID", "20421").strip()
 
-DB_NAME = os.getenv("DB_NAME", "click_lunch_v6.db")
+DB_NAME = database_path()
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -305,7 +318,7 @@ def current_day():
 def next_business_date():
     now = local_now()
     result = now.date()
-    if now.weekday() >= 5 or now.time() >= t_time(17, 0):
+    if now.weekday() >= 5 or now.time() >= t_time(20, 0):
         result += timedelta(days=1)
     while result.weekday() >= 5:
         result += timedelta(days=1)
@@ -318,7 +331,7 @@ def next_date_for_day(day_id):
         return None
     now = local_now()
     delta = (target_weekday - now.weekday()) % 7
-    if delta == 0 and now.time() >= t_time(17, 0):
+    if delta == 0 and now.time() >= t_time(20, 0):
         delta = 7
     return (now.date() + timedelta(days=delta)).isoformat()
 
@@ -477,6 +490,7 @@ def init_db():
     ensure_column("orders", "qr_token", "TEXT")
     ensure_column("orders", "pickup_date", "TEXT")
     ensure_column("orders", "request_token", "TEXT")
+    ensure_column("orders", "request_hash", "TEXT")
     ensure_column("orders", "comment", "TEXT")
     ensure_column("lunch_config", "salad_description", "TEXT")
     ensure_column("lunch_config", "salad_image", "TEXT")
@@ -485,6 +499,7 @@ def init_db():
     c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_qr_token ON orders(qr_token)")
     c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_request_token ON orders(request_token)")
 
+    order_lifecycle.migrate(conn)
     conn.commit()
     conn.close()
     _seed_menu()
@@ -614,16 +629,13 @@ def get_orders_count(user_id):
 
 
 def mark_order_delivered_by_qr(token):
+    """Compatibility lookup only: scanning never issues an order."""
     conn = _conn()
-    row = conn.execute("SELECT * FROM orders WHERE qr_token=?", (token,)).fetchone()
-    conn.close()
-    if not row:
-        return None, "not_found"
-    if row["status"] == "delivered":
-        return dict(row), "already_delivered"
-    if row["status"] == "cancelled" or not set_order_status(row["order_id"], "delivered"):
-        return dict(row), "invalid_status"
-    return get_order(row["order_id"]), "delivered"
+    try:
+        row = conn.execute("SELECT * FROM orders WHERE qr_token=?", (token,)).fetchone()
+        return (dict(row), "view") if row else (None, "not_found")
+    finally:
+        conn.close()
 
 
 def build_qr_image(link):
@@ -751,7 +763,7 @@ def build_day_caption(day_id, day_name, pickup_date=None, channel_post=False):
     if channel_post:
         lines += [
             "",
-            "🕒 Выдача: 11:00–16:00",
+            "🕒 Выдача: 09:00–20:00",
             "📍 4 этаж, кухня",
             "",
             "Оформите заказ заранее в боте 👇",
@@ -840,119 +852,84 @@ def get_cart_summary(user_id):
 # ============================================================
 # ORDER STORAGE
 # ============================================================
-def create_order(
-    user_id,
-    items_str,
-    total,
-    pickup_time,
-    pickup_date,
-    request_token,
-    comment="",
-    discount_amount=0,
-    components=None,
-    points_used=0,
-):
-    components = components or []
-    comment = str(comment or "").strip()[:300]
-    if not request_token:
-        raise ValueError("request_token is required")
-    conn = _conn()
-    now = local_now().strftime("%Y-%m-%d %H:%M:%S")
-    cur = conn.cursor()
-    cur.execute("BEGIN IMMEDIATE")
-    existing = cur.execute(
-        "SELECT order_id,points_used,points_earned,qr_token FROM orders WHERE request_token=?",
-        (request_token,),
-    ).fetchone()
-    if existing:
-        conn.close()
-        return existing["order_id"], existing["points_used"], existing["points_earned"], existing["qr_token"], False
+def server_quote(items, pickup_date, pickup_time):
+    return quote_order(items, pickup_date, pickup_time, local_now(), menu_is_active(),
+                 get_items, get_lunch_config, LUNCH_DRINKS, hot_has_built_in_garnish)
 
-    # Списание баллов и создание заказа выполняются одной транзакцией.
-    # Начисление произойдёт только после фактической выдачи заказа.
-    balance_row = cur.execute("SELECT COALESCE(balance,0) AS balance FROM users WHERE user_id=?", (user_id,)).fetchone()
-    current_balance = int(balance_row["balance"]) if balance_row else 0
-    points_used = max(0, min(int(points_used or 0), current_balance))
-    points_earned = int(max(0, total) * POINTS_RATE)
-    qr_token = secrets.token_urlsafe(18)
-    cur.execute(
-        "INSERT INTO orders("
-        "user_id,items,total,status,pickup_time,pickup_date,created_at,discount_amount,"
-        "points_used,points_earned,rewards_applied,qr_token,request_token,comment"
-        ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (
-            user_id, items_str, total, "new", pickup_time, pickup_date, now, discount_amount,
-            points_used, points_earned, 0, qr_token, request_token, comment,
-        ),
+
+def cart_items(user_id):
+    result = []
+    for item_id, item in get_cart(user_id).items():
+        if str(item_id).startswith("lunch_"):
+            try:
+                _, day, hot_id, garnish, salad, drink = str(item_id).split("_", 5)
+                cfg, hot = get_lunch_config(day)
+                product = next((h for h in hot if h["id"] == int(hot_id)), None)
+                if not cfg or not product or salad not in {"skeep", "snone"}:
+                    fail("unavailable")
+                result.append(dict(item_type="lunch", day_id=day, hot_name=product["name"],
+                    garnish=get_garnish_by_index(cfg, int(garnish[1:])),
+                    with_salad=salad == "skeep", drink_code=drink, quantity=item["count"]))
+            except (ValueError, TypeError, StopIteration):
+                fail("unavailable")
+        else:
+            conn = _conn()
+            try:
+                product = conn.execute("SELECT * FROM menu_items WHERE id=?", (item_id,)).fetchone()
+            finally:
+                conn.close()
+            if not product:
+                fail("unavailable")
+            result.append(dict(item_type="menu_item", category_id=product["cat_id"], item_name=product["name"], quantity=item["count"]))
+    return normalize(result)
+
+
+def create_order(user_id, items_str, total, pickup_time, pickup_date, request_token,
+                 comment="", discount_amount=0, components=None, points_used=0,
+                 source_items=None, request_hash=None, clear_server_cart=False):
+    if source_items is None or not request_hash:
+        fail("stale")
+    def calculate():
+        if clear_server_cart and normalize(cart_items(user_id)) != normalize(source_items):
+            fail("stale")
+        return server_quote(source_items, pickup_date, pickup_time)
+    return save(_conn, user_id, request_token, request_hash, calculate, total,
+                points_used, pickup_date, pickup_time, comment,
+                local_now().strftime("%Y-%m-%d %H:%M:%S"), clear_server_cart)
+
+
+async def resend_order(context, user_id, order):
+    if order["user_id"] != user_id:
+        raise order_lifecycle.ActionError("Заказ не найден.")
+    await bot_workflows.send_customer(sys.modules[__name__], context.bot, order)
+
+
+async def notify_saved_order(bot, order_id, owner_notice=False):
+    await bot_workflows.notify(sys.modules[__name__], bot, order_id, owner_notice)
+
+
+async def offer_mini_recalculation(context, user_id, pending):
+    base, _, _, description = server_quote(pending["items"], pending["date"], pending["pickup"])
+    points = min(get_points_balance(user_id), int(base * POINTS_MAX_USE_RATE)) if pending["use_points"] else 0
+    pending.update(total=base - points, points=points, offer_id=secrets.token_urlsafe(12))
+    context.user_data["mini_pending"] = pending
+    await context.bot.send_message(
+        chat_id=user_id,
+        text=f"Расчёт изменился. {description}\nБонусы: {fmt(points)}. К оплате: {fmt(base - points)} сум. Подтвердите новую сумму.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Подтвердить новый расчёт", callback_data=f"mini_reconfirm:{pending['offer_id']}")]]),
     )
-    order_id = cur.lastrowid
-    for item_type, item_name, qty, unit_price in components:
-        cur.execute(
-            "INSERT INTO order_items(order_id,item_type,item_name,quantity,unit_price) VALUES (?,?,?,?,?)",
-            (order_id, item_type, item_name, qty, unit_price),
-        )
-        cur.execute(
-            "INSERT INTO order_components(order_id,component_type,component_name) VALUES (?,?,?)",
-            (order_id, item_type, item_name),
-        )
-    cur.execute(
-        "UPDATE users SET orders_count=orders_count+1, balance=COALESCE(balance,0)-? WHERE user_id=?",
-        (points_used, user_id),
-    )
-    conn.commit()
-    conn.close()
-    return order_id, points_used, points_earned, qr_token, True
 
 
-def set_order_status(order_id, status):
-    if status not in ORDER_STATUSES:
-        return False
-    conn = _conn()
-    conn.execute("BEGIN IMMEDIATE")
-    row = conn.execute(
-        "SELECT user_id,status,points_used,points_earned,rewards_applied FROM orders WHERE order_id=?",
-        (order_id,),
-    ).fetchone()
-    if not row:
-        conn.close()
-        return False
-    current = row["status"]
-    if current == status:
-        conn.close()
-        return True
+def set_order_status(order_id, status, actor=None):
+    return order_lifecycle.change_status(_conn, order_id, status, actor, ADMIN_ID, KITCHEN_IDS)
 
-    if current in {"delivered", "cancelled"}:
-        conn.close()
-        return False
 
-    status_rank = {"new": 0, "paid": 0, "cooking": 1, "ready": 2, "delivered": 3}
-    if (
-        status != "cancelled"
-        and current in status_rank
-        and status in status_rank
-        and status_rank[status] < status_rank[current]
-    ):
-        conn.close()
-        return False
+def report_payment(order_id, actor):
+    return order_lifecycle.change_payment(_conn, order_id, actor, "report", ADMIN_ID, local_now().isoformat())
 
-    if status == "cancelled":
-        # Бонусы нового заказа ещё не начислены, поэтому возвращаем только списанные.
-        if not row["rewards_applied"] and row["points_used"]:
-            conn.execute(
-                "UPDATE users SET balance=COALESCE(balance,0)+? WHERE user_id=?",
-                (row["points_used"], row["user_id"]),
-            )
-    elif status == "delivered" and not row["rewards_applied"]:
-        conn.execute(
-            "UPDATE users SET balance=COALESCE(balance,0)+? WHERE user_id=?",
-            (row["points_earned"], row["user_id"]),
-        )
-        conn.execute("UPDATE orders SET rewards_applied=1 WHERE order_id=?", (order_id,))
 
-    conn.execute("UPDATE orders SET status=? WHERE order_id=?", (status, order_id))
-    conn.commit()
-    conn.close()
-    return True
+def confirm_payment(order_id, actor):
+    return order_lifecycle.change_payment(_conn, order_id, actor, "confirm", ADMIN_ID, local_now().isoformat())
 
 
 def get_order(order_id):
@@ -994,7 +971,7 @@ def get_kitchen_summary():
         "SELECT oi.item_type, oi.item_name, SUM(oi.quantity) AS qty "
         "FROM order_items oi JOIN orders o ON o.order_id=oi.order_id "
         "WHERE COALESCE(o.pickup_date,substr(o.created_at,1,10))=? "
-        "AND o.status IN ('new','paid','cooking') "
+        "AND o.payment_status='confirmed' AND o.status IN ('new','paid','cooking') "
         "GROUP BY oi.item_type, oi.item_name ORDER BY oi.item_type, qty DESC",
         (today,),
     ).fetchall()
@@ -1097,25 +1074,11 @@ def hot_has_built_in_garnish(hot_name):
 # KEYBOARDS
 # ============================================================
 def kb_miniapp():
-    """Постоянная кнопка запуска Mini App в личном чате с ботом."""
-    if not MINIAPP_URL.startswith("https://"):
-        return None
-    return ReplyKeyboardMarkup(
-        [[KeyboardButton("🍽 Открыть меню", web_app=WebAppInfo(url=MINIAPP_URL))]],
-        resize_keyboard=True,
-        is_persistent=True,
-    )
+    return bot_workflows.home(sys.modules[__name__])
 
 
 def kb_main():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🍱 Комплексный обед сегодня", callback_data="lunch_today")],
-        [InlineKeyboardButton("🍳 Завтраки", callback_data="cat_breakfasts"),
-         InlineKeyboardButton("🥤 Напитки", callback_data="nav_drinks")],
-        [InlineKeyboardButton("🗓 Меню на неделю", callback_data="nav_week")],
-        [InlineKeyboardButton("🛒 Корзина", callback_data="cart_view")],
-        [InlineKeyboardButton("⭐ Мои бонусы", callback_data="profile")],
-    ])
+    return kb_miniapp()
 
 
 def kb_home():
@@ -1228,7 +1191,7 @@ def kb_lunch_drinks():
 def _scheduled_time_rows(pickup_date):
     """Возвращает только те готовые часы, которые ещё можно выбрать."""
     buttons = []
-    for value in ("11:00", "12:00", "13:00", "14:00", "15:00", "16:00"):
+    for value in (f"{hour:02d}:00" for hour in range(9, 21)):
         parsed = datetime.strptime(value, "%H:%M").time()
         if pickup_time_is_available(pickup_date, parsed):
             buttons.append(InlineKeyboardButton(value, callback_data=f"tv_{value}"))
@@ -1242,7 +1205,7 @@ def kb_time(pickup_date, has_lunch=False):
     now_time = now.time().replace(tzinfo=None)
     rows = []
 
-    if is_today and t_time(11, 0) <= now_time < t_time(17, 0):
+    if is_today and t_time(9, 0) <= now_time < t_time(20, 0):
         rows.append([
             InlineKeyboardButton("🏃 Забрать сейчас", callback_data="tv_Сейчас (В очереди)")
         ])
@@ -1350,72 +1313,19 @@ async def show_profile(chat_id, context):
 
 
 async def show_main(chat_id, context):
-    balance = get_points_balance(chat_id)
-    await send_or_edit(
-        chat_id,
-        context.user_data.get("last_msg_id"),
-        MAIN_BANNER,
-        f"<b>🏠 Главное меню</b>\n\n❤️ Рады вас видеть!\n⭐ Бонусный баланс: <b>{fmt(balance)}</b>\n\n🍽 Что хотите заказать сегодня?",
-        kb_main(),
-        context,
-    )
+    await context.bot.send_message(chat_id=chat_id, text="Click Lunch · меню, заказы и помощь", reply_markup=kb_main())
 
-# ============================================================
-# COMMANDS / CONTACT
-# ============================================================
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-
-    # QR-выдача: ссылка открывает этого же бота. Только администратор может подтвердить выдачу.
-    if context.args and context.args[0].startswith("pickup_"):
-        token = context.args[0][7:]
-        if user_id != ADMIN_ID:
-            await update.message.reply_text("🔒 Этот QR-код предназначен для сотрудника, который выдаёт заказ.")
-            return
-        order, result = mark_order_delivered_by_qr(token)
-        if result == "not_found":
-            await update.message.reply_text("❌ QR-код не найден. Попросите сотрудника открыть актуальный QR-код заказа.")
-            return
-        if result == "already_delivered":
-            await update.message.reply_text(f"ℹ️ Заказ #{order['order_id']} уже выдан. Этот QR-код повторно использовать нельзя.")
-            return
-        if result == "invalid_status":
-            await update.message.reply_text("❌ Этот заказ отменён или недоступен для выдачи.")
-            return
-        try:
-            await context.bot.send_message(
-                chat_id=order["user_id"],
-                text=f"🎉 <b>Заказ #{order['order_id']} выдан!</b>\n\nПриятного аппетита ❤️",
-                reply_markup=kb_home(),
-                parse_mode="HTML",
-            )
-        except Exception:
-            pass
-        await update.message.reply_text(f"✅ Заказ #{order['order_id']} отмечен как выдан.")
+    if update.effective_chat.type != "private":
+        await update.message.reply_text("Откройте личный чат с ботом.")
         return
-
-    if not get_user(user_id):
-        kb = ReplyKeyboardMarkup(
-            [[KeyboardButton("📱 Поделиться номером", request_contact=True)]],
-            resize_keyboard=True,
-            one_time_keyboard=True,
-        )
-        await context.bot.send_message(
-            chat_id=user_id,
-            text="👋 <b>Добро пожаловать!</b>\n\nЧтобы оформить заказ, поделитесь номером телефона. Это займёт пару секунд 👇",
-            reply_markup=kb,
-            parse_mode="HTML",
-        )
-        return
-    if kb_miniapp():
-        await update.message.reply_text(
-            "🍽 Новое удобное меню доступно по кнопке ниже.",
-            reply_markup=kb_miniapp(),
-        )
-    await show_main(user_id, context)
+    await bot_workflows.start(sys.modules[__name__], update, context)
 
 
 async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        return
     contact = update.message.contact
     if contact:
         if contact.user_id != update.effective_user.id:
@@ -1426,7 +1336,7 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
         add_user(update.effective_user.id, contact.phone_number)
         await update.message.reply_text(
             "✅ Спасибо! Номер сохранён. Теперь можно заказывать 👌",
-            reply_markup=kb_miniapp() or ReplyKeyboardRemove(),
+            reply_markup=ReplyKeyboardRemove(),
         )
         await show_main(update.effective_user.id, context)
 
@@ -1442,238 +1352,22 @@ async def cmd_app(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Принимает заказ из Mini App и заново рассчитывает его по меню в БД."""
-    message = update.effective_message
-    user = update.effective_user
-    if not message or not message.web_app_data or not user:
-        return
-    if not get_user(user.id):
-        await message.reply_text(
-            "Сначала поделитесь своим номером через /start, затем откройте меню снова.",
-        )
-        return
-    if not menu_is_active():
-        await message.reply_text("😔 Приём заказов сейчас приостановлен. Попробуйте немного позже.")
-        return
+    # Legacy sendData is never a second order-creation channel.
+    await update.effective_message.reply_text("Старая кнопка Mini App больше не оформляет заказы. Откройте /app и новую кнопку под сообщением. Корзина останется в приложении.", reply_markup=kb_main())
 
-    try:
-        raw = message.web_app_data.data
-        if len(raw.encode("utf-8")) > 4096:
-            raise ValueError("payload is too large")
-        payload = json.loads(raw)
-        if payload.get("type") != "miniapp_order" or payload.get("version") not in {1, 2}:
-            raise ValueError("unsupported payload")
 
-        request_token = str(payload.get("request_token") or "")
-        if not re.fullmatch(r"[A-Za-z0-9_-]{8,80}", request_token):
-            raise ValueError("invalid request token")
+async def cmd_orders(update, context):
+    if update.effective_chat.type == "private":
+        await bot_workflows.list_orders(sys.modules[__name__], update.message, update.effective_user.id, "mine")
 
-        pickup_date = str(payload.get("pickup_date") or "")
-        pickup_day = datetime.strptime(pickup_date, "%Y-%m-%d").date()
-        days_ahead = (pickup_day - local_now().date()).days
-        if days_ahead < 0 or days_ahead > 14 or pickup_day.weekday() > 4:
-            raise ValueError("invalid pickup date")
 
-        pickup_time = str(payload.get("pickup_time") or "")
-        selected_time = datetime.strptime(pickup_time, "%H:%M").time()
-        if selected_time < t_time(11, 0) or selected_time > t_time(16, 0):
-            raise ValueError("invalid pickup time")
-        if not pickup_time_is_available(pickup_date, selected_time):
-            raise ValueError("pickup time has passed")
+async def cmd_help(update, context):
+    await bot_workflows.help_message(sys.modules[__name__], update.message)
 
-        items = payload.get("items")
-        if not isinstance(items, list) or not 1 <= len(items) <= 10:
-            raise ValueError("invalid items")
-        use_points = payload.get("use_points", False)
-        if not isinstance(use_points, bool):
-            raise ValueError("invalid points option")
-        raw_comment = payload.get("comment", "")
-        if not isinstance(raw_comment, str):
-            raise ValueError("invalid order comment")
-        comment = re.sub(r"\s+", " ", raw_comment).strip()
-        if len(comment) > 300:
-            raise ValueError("order comment is too long")
 
-        expected_day_id = {0: "mon", 1: "tue", 2: "wed", 3: "thu", 4: "fri"}[pickup_day.weekday()]
-        detail_lines = []
-        short_names = []
-        components = []
-        total = 0
-        total_quantity = 0
-
-        for item in items:
-            if not isinstance(item, dict):
-                raise ValueError("invalid item")
-            quantity = int(item.get("quantity") or 0)
-            if quantity < 1 or quantity > 5:
-                raise ValueError("invalid item quantity")
-
-            item_type = str(item.get("item_type") or "lunch")
-            if item_type == "menu_item":
-                category_id = str(item.get("category_id") or "")
-                item_name = str(item.get("item_name") or "")
-                if category_id not in {"breakfasts", "hot_drinks", "cold_drinks", "fresh_drinks"}:
-                    raise ValueError("invalid menu category")
-                menu_item = next(
-                    (candidate for candidate in get_items(category_id) if candidate["name"] == item_name),
-                    None,
-                )
-                if not menu_item:
-                    raise ValueError("menu item is no longer available")
-                item_total = int(menu_item["price"]) * quantity
-                total += item_total
-                total_quantity += quantity
-                if total > 2_000_000 or total_quantity > 10:
-                    raise ValueError("order limit exceeded")
-                detail_lines.append(
-                    f"• <b>{esc(menu_item['name'])}</b> ×{quantity} — <b>{fmt(item_total)} сум</b>"
-                )
-                short_names.append(f"{menu_item['name']} x{quantity}")
-                component_type = "fresh" if category_id == "fresh_drinks" else "other"
-                components.append(
-                    (component_type, menu_item["name"], quantity, menu_item["price"])
-                )
-                continue
-
-            if item_type != "lunch" or item.get("day_id") != expected_day_id:
-                raise ValueError("menu day mismatch")
-            hot_name = str(item.get("hot_name") or "")
-            garnish = str(item.get("garnish") or "")
-            drink_code = str(item.get("drink_code") or "")
-            with_salad = item.get("with_salad")
-            if not isinstance(with_salad, bool):
-                raise ValueError("invalid item options")
-
-            cfg, hot_items = get_lunch_config(expected_day_id)
-            hot = next((candidate for candidate in hot_items if candidate["name"] == hot_name), None)
-            allowed_garnishes = {cfg["garnish1"], cfg["garnish2"], cfg["garnish3"]} if cfg else set()
-            drink_name = LUNCH_DRINKS.get(drink_code)
-            built_in_garnish = bool(hot and hot_has_built_in_garnish(hot["name"]))
-            garnish_is_valid = garnish in {"", BUILT_IN_GARNISH} if built_in_garnish else garnish in allowed_garnishes
-            if not cfg or not hot or not garnish_is_valid or not drink_name:
-                raise ValueError("menu item is no longer available")
-
-            item_total = int(hot["price"]) * quantity
-            total += item_total
-            total_quantity += quantity
-            if total > 2_000_000 or total_quantity > 10:
-                raise ValueError("order limit exceeded")
-
-            options = [] if built_in_garnish else [garnish]
-            if with_salad:
-                options.append(cfg["salad"])
-            else:
-                options.append("без салата")
-            if drink_code != "none":
-                options.append(drink_name)
-            else:
-                options.append("без напитка")
-
-            detail_lines.append(
-                f"• <b>{esc(hot['name'])}</b> ×{quantity} — <b>{fmt(item_total)} сум</b>\n"
-                f"  └ {esc(' · '.join(options))}"
-            )
-            short_names.append(f"{hot['name']} + {' + '.join(options)} x{quantity}")
-            components.append(("hot", hot["name"], quantity, hot["price"]))
-            if not built_in_garnish:
-                components.append(("garnish", garnish, quantity, 0))
-            if with_salad:
-                components.append(("salad", cfg["salad"], quantity, 0))
-            if drink_code != "none":
-                components.append(("drink", drink_name, quantity, 0))
-
-        if total <= 0:
-            raise ValueError("empty order")
-    except (TypeError, ValueError, KeyError, json.JSONDecodeError):
-        logging.warning("Отклонены некорректные данные Mini App от пользователя %s", user.id)
-        await message.reply_text(
-            "⚠️ Не удалось проверить заказ. Откройте меню заново и повторите оформление.",
-        )
-        return
-
-    request_token = f"miniapp:{user.id}:{request_token}"
-    items_str = ", ".join(short_names)
-    available_points = get_points_balance(user.id)
-    points_to_use = (
-        min(available_points, int(total * POINTS_MAX_USE_RATE))
-        if use_points else 0
-    )
-    final_total = max(0, total - points_to_use)
-    order_id, points_used, points_earned, qr_token, created = create_order(
-        user.id,
-        items_str,
-        final_total,
-        pickup_time,
-        pickup_date,
-        request_token,
-        comment=comment,
-        components=components,
-        points_used=points_to_use,
-    )
-    if not created:
-        await message.reply_text(f"ℹ️ Заказ #{order_id} уже был создан. Повторное оформление не выполнено.")
-        return
-
-    lines = "\n".join(detail_lines)
-    balance_after = get_points_balance(user.id)
-    bot_info = await context.bot.get_me()
-    pickup_link = get_pickup_link(bot_info.username, qr_token)
-    qr_image = build_qr_image(pickup_link)
-    comment_line = f"📝 Комментарий: {esc(comment)}\n" if comment else ""
-    confirmation = (
-        f"<b>✅ Заказ #{order_id} принят!</b>\n\n{lines}\n\n"
-        f"📍 Место выдачи: 4 этаж, кухня\n"
-        f"📅 Дата: {display_date(pickup_date)}\n"
-        f"🕒 Время: {pickup_time}\n"
-        f"{comment_line}"
-        f"💰 К оплате через Click: {fmt(final_total)} сум\n\n"
-        f"⭐ Списано бонусов: {fmt(points_used)}\n"
-        f"⭐ Будет начислено после выдачи: +{fmt(points_earned)}\n"
-        f"⭐ Текущий баланс: {fmt(balance_after)} бонусов\n\n"
-        "Нажмите кнопку оплаты ниже, затем покажите QR‑код сотруднику при получении."
-    )
-    payment_markup = kb_click_payment(final_total)
-    try:
-        await context.bot.send_photo(
-            chat_id=user.id,
-            photo=qr_image,
-            caption=confirmation,
-            reply_markup=payment_markup,
-            parse_mode="HTML",
-        )
-    except Exception:
-        await context.bot.send_message(
-            chat_id=user.id,
-            text=confirmation + f"\n\nQR: {pickup_link}",
-            reply_markup=payment_markup,
-            parse_mode="HTML",
-        )
-
-    order_notification_chat_id = ORDER_CHANNEL_ID or ADMIN_ID
-    if order_notification_chat_id:
-        user_row = get_user(user.id)
-        phone = user_row["phone"] if user_row else "нет"
-        full_name = esc(user.full_name or user.first_name or "Клиент")
-        username = f" (@{esc(user.username)})" if user.username else ""
-        admin_text = (
-            f"🚨 <b>Новый заказ #{order_id} из Mini App!</b>\n"
-            f"👤 {full_name}{username}\n📞 {esc(phone)}\n"
-            f"📅 {display_date(pickup_date)}\n🕒 {pickup_time}\n"
-            f"{comment_line}"
-            f"💰 {fmt(final_total)} сум — ссылка Click отправлена клиенту\n"
-            f"⭐ Списано бонусов: {fmt(points_used)}\n"
-            f"⭐ Будет начислено после выдачи: {fmt(points_earned)}\n\n"
-            f"<b>Состав:</b>\n{lines}"
-        )
-        try:
-            await context.bot.send_message(
-                chat_id=order_notification_chat_id,
-                text=admin_text,
-                reply_markup=kb_order_status(order_id, "new"),
-                parse_mode="HTML",
-            )
-        except Exception:
-            logging.exception("Не удалось отправить уведомление о заказе #%s", order_id)
+async def cmd_kitchen(update, context):
+    if update.effective_chat.type == "private":
+        await bot_workflows.kitchen(sys.modules[__name__], update, context)
 
 
 async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1688,6 +1382,7 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ Доступ закрыт.")
         return
     kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Проверка оплат", callback_data="adm_payments")],
         [InlineKeyboardButton("📊 Статистика", callback_data="adm_stats")],
         [InlineKeyboardButton("🍽 Сводка для кухни", callback_data="adm_kitchen")],
         [InlineKeyboardButton("📋 Активные заказы", callback_data="adm_orders")],
@@ -1768,6 +1463,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text or ""
     state = context.user_data.get("state")
+    if state in {"CUSTOM_TIME", "ORDER_COMMENT"} or user_id != ADMIN_ID:
+        context.user_data["state"] = None
+        await update.message.reply_text("Новые заказы оформляются в Mini App.", reply_markup=kb_main())
+        return
 
     if state == "CUSTOM_TIME":
         raw = text.strip()
@@ -1778,9 +1477,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "⚠️ Не удалось распознать время.\n\nУкажите его в формате <b>ЧЧ:ММ</b>, например <b>14:45</b>.",
                 parse_mode="HTML")
             return
-        if not (t_time(11, 0) <= parsed <= t_time(16, 0)):
+        if not (t_time(9, 0) <= parsed <= t_time(20, 0)):
             await update.message.reply_text(
-                "⚠️ Для обычной выдачи можно выбрать время с <b>11:00 до 16:00</b>.\n\nПопробуйте ещё раз.",
+                "⚠️ Для обычной выдачи можно выбрать время с <b>09:00 до 20:00</b>.\n\nПопробуйте ещё раз.",
                 parse_mode="HTML")
             return
         pickup_date = context.user_data.get("pickup_date") or get_cart_pickup_date(user_id)
@@ -1936,9 +1635,14 @@ async def _show_checkout(source, context, user_id, pickup_time, discount=False, 
             text="⚠️ В корзине позиции на разные даты. Очистите корзину и соберите один заказ заново.",
         )
         return
-    base = lunch_total + other_total
+    try:
+        quoted_base, quoted_discount, _, description = server_quote(cart_items(user_id), pickup_date, pickup_time)
+    except OrderError as error:
+        await context.bot.send_message(chat_id=user_id, text=str(error))
+        return
+    base = quoted_base + quoted_discount
     if discount:
-        disc_amt = int(lunch_total * 0.2)
+        disc_amt = quoted_discount
         discounted_base = base - disc_amt
     else:
         disc_amt = 0
@@ -1983,7 +1687,7 @@ async def _show_checkout(source, context, user_id, pickup_time, discount=False, 
         [InlineKeyboardButton(points_btn, callback_data=points_callback)],
         [InlineKeyboardButton("✏️ Изменить комментарий", callback_data="comment_edit")],
         [InlineKeyboardButton("💳 Перейти к оплате в Click", url=get_click_payment_url(final))],
-        [InlineKeyboardButton("✅ Я оплатил(а) — подтвердить заказ", callback_data="confirm_order")],
+        [InlineKeyboardButton("✅ Я оплатил(а) — подтвердить заказ", callback_data=f"confirm_order:{request_token}")],
         [InlineKeyboardButton("🔙 Назад", callback_data="select_time")],
     ])
     discount_line = f"\n🔥 Скидка на обеды: -{fmt(disc_amt)} сум" if disc_amt else ""
@@ -2022,10 +1726,56 @@ async def _show_checkout(source, context, user_id, pickup_time, discount=False, 
 # MAIN CALLBACK HANDLER
 # ============================================================
 async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type != "private":
+        await update.callback_query.answer("Откройте личный чат с ботом.", show_alert=True)
+        return
+    if await bot_workflows.callback(sys.modules[__name__], update, context):
+        return
     q = update.callback_query
     user_id = q.from_user.id
     data = q.data
     last = context.user_data.get("last_msg_id", q.message.message_id)
+
+    if data.startswith("confirm_order:"):
+        token = data.partition(":")[2]
+        conn = _conn()
+        try:
+            saved = conn.execute("SELECT * FROM orders WHERE request_token=? AND user_id=?", (token, user_id)).fetchone()
+        finally:
+            conn.close()
+        if saved:
+            await q.answer()
+            await resend_order(context, user_id, dict(saved))
+            return
+        if token != context.user_data.get("request_token"):
+            await q.answer("Оформление устарело. Откройте корзину заново.", show_alert=True)
+            return
+        data = "confirm_order"
+
+    if data.startswith("mini_reconfirm:"):
+        await q.answer()
+        pending = context.user_data.get("mini_pending")
+        if not pending or pending.get("offer_id") != data.partition(":")[2]:
+            await context.bot.send_message(chat_id=user_id, text="Оформление устарело. Откройте меню заново.")
+            return
+        try:
+            result = create_order(user_id, "", pending["total"], pending["pickup"], pending["date"],
+                pending["token"], comment=pending["comment"], points_used=pending["points"],
+                source_items=pending["items"], request_hash=pending["digest"])
+        except OrderError as error:
+            logging.warning("order_rejected reason=%s request_id=%s", error.code, update.update_id)
+            if error.code == "stale":
+                await offer_mini_recalculation(context, user_id, pending)
+            else:
+                await context.bot.send_message(chat_id=user_id, text=str(error))
+            return
+        await resend_order(context, user_id, get_order(result[0]))
+        if result[-1] and (ORDER_CHANNEL_ID or ADMIN_ID):
+            order = get_order(result[0])
+            await context.bot.send_message(chat_id=ORDER_CHANNEL_ID or ADMIN_ID,
+                text=f"Новый заказ #{order['order_id']} после перерасчёта.\n{order['items']}\n{order['pickup_date']} {order['pickup_time']}\nК оплате: {fmt(order['total'])} сум. Проверьте поступление денег перед сканированием QR.",
+                reply_markup=kb_order_status(order["order_id"], "new"))
+        return
 
     if data == "ignore":
         await q.answer()
@@ -2038,6 +1788,12 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         or data.startswith(("start_day_", "lh_", "lg_", "ls_", "ld_", "add_", "cart_dec_", "tv_"))
     )
+    if data == "confirm_order" and context.user_data.get("request_token") and context.user_data.get("checkout_hash"):
+        existing = existing_order(_conn, context.user_data["request_token"], context.user_data["checkout_hash"], user_id)
+        if existing:
+            await q.answer()
+            await resend_order(context, user_id, existing)
+            return
     if ordering_action and not menu_is_active():
         await q.answer("⛔ Приём заказов сейчас закрыт.", show_alert=True)
         return
@@ -2725,7 +2481,7 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"<b>🕒 Выберите время выдачи заказа</b>\n\n"
             f"📅 <b>{display_pickup_date(pickup_date)}</b>\n"
             f"{time_hint}\n\n"
-            f"Обычная выдача: 11:00–16:00.",
+            f"Обычная выдача: 09:00–20:00.",
             kb_time(pickup_date, has_lunch=lunch > 0), context
         )
         return
@@ -2832,9 +2588,9 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         show_alert=True,
                     )
                     return
-                if not (t_time(11, 0) <= now_time < t_time(17, 0)):
+                if not (t_time(9, 0) <= now_time < t_time(20, 0)):
                     await q.answer(
-                        "«Забрать сейчас» доступно сегодня с 11:00 до 17:00.",
+                        "«Забрать сейчас» доступно сегодня с 09:00 до 20:00.",
                         show_alert=True,
                     )
                     return
@@ -2877,7 +2633,6 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         if (
             snapshot.get("items_str") != items_str
-            or snapshot.get("base") != lunch + other
             or snapshot.get("pickup_date") != pickup_date
         ):
             await context.bot.send_message(
@@ -2890,75 +2645,43 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         discount_amount = int(snapshot["discount_amount"])
         order_comment = str(snapshot.get("comment") or "").strip()
 
-        components = []
-        for item_id, item in get_cart(user_id).items():
-            if str(item_id).startswith("lunch_"):
-                parts = str(item_id).split("_")
-                if len(parts) == 6 and parts[3].startswith("g") and parts[4].startswith("s"):
-                    day_id = parts[1]
-                    try:
-                        hot_id = int(parts[2])
-                        garnish_index = int(parts[3][1:])
-                        salad_code = parts[4][1:]
-                    except ValueError:
-                        hot_id = None
-                        garnish_index = None
-                        salad_code = None
-                    drink_code = parts[5]
-                    drink_name = LUNCH_DRINKS.get(drink_code)
-                    cfg, hot_items = get_lunch_config(day_id)
-                    hot = next((h for h in hot_items if h["id"] == hot_id), None)
-                    garnish = (
-                        get_garnish_by_index(cfg, garnish_index)
-                        if cfg and garnish_index is not None else None
-                    )
-                    if cfg and hot and garnish and salad_code in {"keep", "none"} and drink_name:
-                        qty = item["count"]
-                        components.extend([
-                            ("hot", hot["name"], qty, hot["price"]),
-                        ])
-                        if garnish_index != 0:
-                            components.append(("garnish", garnish, qty, 0))
-                        if salad_code != "none":
-                            components.append(("salad", cfg["salad"], qty, 0))
-                        if drink_code != "none":
-                            components.append(("drink", drink_name, qty, 0))
-            else:
-                components.append(("other", item["name"], item["count"], item["price"]))
-
-        # Фреши определяем по категории menu_items, а не по названию.
-        conn = _conn()
-        fresh_ids = {str(r["id"]) for r in conn.execute(
-            "SELECT id FROM menu_items WHERE cat_id='fresh_drinks'"
-        ).fetchall()}
-        conn.close()
-        fresh_names = {item["name"] for item_id, item in get_cart(user_id).items() if str(item_id) in fresh_ids}
-        components = [
-            ("fresh" if item_name in fresh_names and item_type == "other" else item_type,
-             item_name, qty, unit_price)
-            for item_type, item_name, qty, unit_price in components
-        ]
+        try:
+            source_items = cart_items(user_id)
+            base, discount_amount, components, checked_description = server_quote(source_items, pickup_date, pickup_time)
+            if base != snapshot["base"] - snapshot["discount_amount"]:
+                await _show_checkout(q, context, user_id, pickup_time, discount=bool(snapshot["discount"]))
+                return
+            lines = esc(checked_description)
+        except OrderError as error:
+            await context.bot.send_message(chat_id=user_id, text=str(error))
+            return
+        digest = fingerprint(source_items, pickup_date, pickup_time, order_comment, bool(snapshot["points_to_use"]))
+        context.user_data["checkout_hash"] = digest
 
         points_to_use = int(snapshot["points_to_use"])
-        order_id, points_used, points_earned, qr_token, created = create_order(
-            user_id,
-            items_str,
-            final,
-            pickup_time,
-            pickup_date,
-            request_token,
-            discount_amount=discount_amount,
-            components=components,
-            points_used=points_to_use,
-            comment=order_comment,
-        )
-        if not created:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"ℹ️ Заказ #{order_id} уже был создан. Повторное оформление не выполнено.",
+        try:
+            order_id, points_used, points_earned, qr_token, created = create_order(
+                user_id,
+                items_str,
+                final,
+                pickup_time,
+                pickup_date,
+                request_token,
+                discount_amount=discount_amount,
+                components=components,
+                points_used=points_to_use,
+                comment=order_comment,
+                source_items=source_items, request_hash=digest, clear_server_cart=True,
             )
+        except OrderError as error:
+            logging.warning("order_rejected reason=%s request_id=%s", error.code, update.update_id)
+            await context.bot.send_message(chat_id=user_id, text=str(error))
+            if error.code == "stale":
+                await _show_checkout(q, context, user_id, pickup_time, discount=bool(snapshot["discount"]))
             return
-        clear_cart(user_id)
+        if not created:
+            await resend_order(context, user_id, get_order(order_id))
+            return
         reset_lunch_session(context)
         context.user_data["lunch_components"] = []
 
@@ -2978,7 +2701,7 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⭐ Списано бонусов: {fmt(points_used)}\n"
             f"⭐ Будет начислено после выдачи: +{fmt(points_earned)}\n"
             f"⭐ Текущий баланс: {fmt(balance_after)} бонусов\n\n"
-            f"📱 Покажите QR-код сотруднику при получении.\n"
+            f"📱 QR не подтверждает оплату. Владелец проверяет поступление денег перед сканированием.\n"
             f"Спасибо, что выбираете нас ❤️\nБудем рады видеть вас снова!"
         )
         try:
@@ -2986,12 +2709,11 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
         try:
-            msg = await context.bot.send_photo(chat_id=user_id, photo=qr_image, caption=text, parse_mode="HTML")
+            msg = await context.bot.send_photo(chat_id=user_id, photo=qr_image, caption=text, reply_markup=kb_click_payment(final), parse_mode="HTML")
         except Exception:
-            msg = await context.bot.send_message(chat_id=user_id, text=text + f"\n\nQR: {pickup_link}", parse_mode="HTML")
+            msg = await context.bot.send_message(chat_id=user_id, text=text + f"\n\nQR: {pickup_link}", reply_markup=kb_click_payment(final), parse_mode="HTML")
         context.user_data["last_msg_id"] = msg.message_id
         context.user_data["points_to_use"] = 0
-        context.user_data["request_token"] = None
         context.user_data["checkout_snapshot"] = None
         context.user_data["order_comment"] = None
         context.user_data["pending_checkout"] = None
@@ -3030,9 +2752,14 @@ async def btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # COMMANDS / SERVER
 # ============================================================
 async def post_init(application: Application):
+    if MINIAPP_URL.startswith("https://"):
+        await application.bot.set_chat_menu_button(menu_button=MenuButtonWebApp(text="Открыть меню", web_app=WebAppInfo(url=MINIAPP_URL)))
     await application.bot.set_my_commands([
         BotCommand("start", "Главное меню"),
         BotCommand("app", "Открыть мини‑приложение"),
+        BotCommand("orders", "Мои заказы"),
+        BotCommand("help", "Помощь"),
+        BotCommand("kitchen", "Кухня"),
         BotCommand("admin", "Панель администратора"),
         BotCommand("post", "Опубликовать пост в канал"),
         BotCommand("myid", "Узнать свой Telegram ID"),
@@ -3045,10 +2772,7 @@ async def health(request):
 
 async def handle_error(update, context):
     error = context.error
-    logging.error(
-        "Необработанная ошибка Telegram-обработчика",
-        exc_info=(type(error), error, error.__traceback__),
-    )
+    logging.error("handler_failed type=%s request_id=%s", type(error).__name__, getattr(update, "update_id", "unknown"))
 
 
 async def main():
@@ -3062,6 +2786,9 @@ async def main():
 
     app_bot.add_handler(CommandHandler("start", cmd_start))
     app_bot.add_handler(CommandHandler("app", cmd_app))
+    app_bot.add_handler(CommandHandler("orders", cmd_orders))
+    app_bot.add_handler(CommandHandler("help", cmd_help))
+    app_bot.add_handler(CommandHandler("kitchen", cmd_kitchen))
     app_bot.add_handler(CommandHandler("admin", cmd_admin))
     app_bot.add_handler(CommandHandler("post", cmd_post))
     app_bot.add_handler(CommandHandler("myid", cmd_myid))
@@ -3072,16 +2799,17 @@ async def main():
     app_bot.add_handler(CallbackQueryHandler(btn))
     app_bot.add_error_handler(handle_error)
 
-    web_app = web.Application()
-    web_app.router.add_get("/", health)
-    runner = web.AppRunner(web_app)
+    web_app = create_app(sys.modules[__name__], app_bot.bot)
+    runner = web.AppRunner(web_app, access_log=None)
     await runner.setup()
-    await web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", 8080))).start()
+    await web.TCPSite(runner, os.getenv("API_BIND", "127.0.0.1"), int(os.getenv("PORT", 8080))).start()
 
     initialized = False
     try:
         await app_bot.initialize()
         initialized = True
+        if app_bot.post_init:
+            await app_bot.post_init(app_bot)
         await app_bot.start()
         await app_bot.updater.start_polling()
         logging.info(">>> Бот запущен <<<")
