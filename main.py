@@ -1313,7 +1313,7 @@ async def show_profile(chat_id, context):
 
 
 async def show_main(chat_id, context):
-    await context.bot.send_message(chat_id=chat_id, text="Click Lunch · меню, заказы и помощь", reply_markup=kb_main())
+    await bot_workflows.send_home(sys.modules[__name__], context.bot, chat_id)
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):

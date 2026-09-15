@@ -1,18 +1,52 @@
 """Employee, owner and kitchen screens. No new orders are created here."""
 import logging
 from contextlib import closing
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo, KeyboardButton, ReplyKeyboardMarkup
 from order_lifecycle import ActionError, PAYMENT_LABELS
 
 
-def launch(runtime):
+def launch(runtime, text="🍽 Открыть меню", view=None):
     if runtime.MINIAPP_URL.startswith("https://"):
-        return InlineKeyboardButton("🍽 Открыть меню", web_app=WebAppInfo(url=runtime.MINIAPP_URL))
-    return InlineKeyboardButton("🍽 Открыть меню", callback_data="app_unconfigured")
+        url = runtime.MINIAPP_URL
+        if view:
+            url += ("&" if "?" in url else "?") + f"view={view}"
+        return InlineKeyboardButton(text, web_app=WebAppInfo(url=url))
+    return InlineKeyboardButton(text, callback_data="app_unconfigured")
 
 
 def home(runtime):
-    return InlineKeyboardMarkup([[launch(runtime)], [InlineKeyboardButton("📋 Мои заказы", callback_data="my_orders")], [InlineKeyboardButton("Помощь", callback_data="help")]])
+    return InlineKeyboardMarkup([
+        [launch(runtime)],
+        [InlineKeyboardButton("📋 Мои заказы", callback_data="my_orders"), launch(runtime, "🛒 Корзина", "cart")],
+        [InlineKeyboardButton("Помощь", callback_data="help")],
+    ])
+
+
+def contact_keyboard():
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton("📱 Поделиться номером", request_contact=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+
+async def send_home(runtime, bot, chat_id):
+    registered = bool(runtime.get_user(chat_id))
+    if not registered:
+        await bot.send_message(
+            chat_id=chat_id,
+            text="Чтобы оформить первый заказ, поделитесь своим номером кнопкой ниже.",
+            reply_markup=contact_keyboard(),
+        )
+    caption = (
+        "Click Lunch · кухня на 4 этаже\n\n"
+        "Откройте меню, посмотрите свои заказы или вернитесь к корзине. "
+        + ("Номер уже сохранён." if registered else "Меню можно смотреть до регистрации.")
+    )
+    try:
+        await bot.send_photo(chat_id=chat_id, photo=runtime.MAIN_BANNER, caption=caption, reply_markup=home(runtime))
+    except Exception:
+        await bot.send_message(chat_id=chat_id, text=caption, reply_markup=home(runtime))
 
 
 def staff(runtime, user_id):
@@ -111,11 +145,7 @@ async def start(runtime, update, context):
         row = dict(row)
         await update.message.reply_text(card(runtime, row), reply_markup=controls(runtime, row, actor))
         return
-    if arg == "register" and not runtime.get_user(actor):
-        await update.message.reply_text("Для первого заказа поделитесь своим номером штатной кнопкой Telegram. Корзина сохранена в Mini App.", reply_markup=ReplyKeyboardMarkup([[KeyboardButton("Поделиться номером", request_contact=True)]], resize_keyboard=True, one_time_keyboard=True))
-        return
-    await update.message.reply_text("Меню можно смотреть без регистрации. Соберите заказ в Mini App.", reply_markup=ReplyKeyboardRemove())
-    await update.message.reply_text("Click Lunch · выдача на 4 этаже, кухня", reply_markup=home(runtime))
+    await send_home(runtime, context.bot, actor)
 
 
 async def help_message(runtime, message):
@@ -141,7 +171,7 @@ async def callback(runtime, update, context):
             elif data in {"my_orders", "profile"}:
                 await list_orders(runtime, q.message, actor, "mine")
             else:
-                await q.message.reply_text("Откройте меню по новой кнопке. Если кнопка недоступна, владелец ещё не настроил HTTPS-адрес.", reply_markup=home(runtime))
+                await send_home(runtime, context.bot, actor)
             return True
         if data in {"adm_orders", "adm_payments", "kitchen_orders", "kitchen_summary", "adm_kitchen"}:
             if not staff(runtime, actor) or (data in {"adm_orders", "adm_payments"} and actor != runtime.ADMIN_ID):
